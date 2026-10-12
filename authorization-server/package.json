@@ -1,0 +1,12 @@
+{
+  "name": "spark-id-authorization-foundation",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Local-only validation foundation; not a deployed identity provider",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test validation.test.js"
+  }
+}

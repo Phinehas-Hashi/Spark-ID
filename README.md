@@ -20,3 +20,6 @@ Windows build: `.\\gradlew.bat assembleDebug`.
 
 ## Developer platform preview
 `docs/developers.html` publishes the planned third-party integration contract and is linked from the Android Developer Hub. **No public OAuth/OIDC provider, developer registration or token issuance is live yet.** The existing Appwrite Account API and first-party session cookie are not a third-party SSO protocol. See the guide for required authorization server, PKCE, redirect validation, scopes, consent, token verification and revocation milestones.
+
+## Authorization server foundation (not live)
+The dependency-free, local-only validation module and tests are under `authorization-server/`. Run `cd authorization-server && npm test` using Node 20+. Read `authorization-server/ARCHITECTURE.md` before building any live endpoints. No developer credentials or public SSO endpoints are available yet.
