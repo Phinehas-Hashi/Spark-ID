@@ -1,8 +1,8 @@
 "use strict";
 // Internal, server-side validation of a short-lived FIRST-PARTY Appwrite JWT.
 // Never forward this credential to third-party OAuth clients.
-const DEFAULT_ENDPOINT = "https://fra.cloud.appwrite.io/v1";
-const DEFAULT_PROJECT = "6accc223002dbb161c74";
+const DEFAULT_ENDPOINT = process.env.APPWRITE_ENDPOINT || "https://fra.cloud.appwrite.io/v1";
+const DEFAULT_PROJECT = process.env.APPWRITE_PROJECT_ID || "6accc223002dbb161c74";
 function createAppwriteAuthenticator({ endpoint = DEFAULT_ENDPOINT, projectId = DEFAULT_PROJECT, fetchImpl = globalThis.fetch, timeoutMs = 5000 } = {}) {
   const url = new URL(endpoint);
   if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash || url.pathname !== "/v1" || !projectId || typeof fetchImpl !== "function" || !Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30000)

@@ -33,3 +33,22 @@ test("rejects insecure configuration",()=>{
   assert.throws(()=>createAppwriteAuthenticator({endpoint:"http://localhost/v1"}));
   assert.throws(()=>createAppwriteAuthenticator({endpoint:"https://example.com/v1?key=abc"}));
 });
+test("uses explicit endpoint and project configuration", async () => {
+  const authenticate = createAppwriteAuthenticator({
+    endpoint: "https://fra.cloud.appwrite.io/v1",
+    projectId: "test-project-123",
+    fetchImpl: async (url, options) => {
+      assert.equal(url, "https://fra.cloud.appwrite.io/v1/account");
+      assert.equal(options.headers["X-Appwrite-Project"], "test-project-123");
+      return {
+        ok: true,
+        json: async () => ({ $id: "developer_123", status: true })
+      };
+    }
+  });
+
+  assert.deepEqual(await authenticate(JWT), {
+    verified: true,
+    subject: "developer_123"
+  });
+});
