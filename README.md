@@ -23,3 +23,6 @@ Windows build: `.\\gradlew.bat assembleDebug`.
 
 ## Authorization server foundation (not live)
 The dependency-free, local-only validation module and tests are under `authorization-server/`. Run `cd authorization-server && npm test` using Node 20+. Read `authorization-server/ARCHITECTURE.md` before building any live endpoints. No developer credentials or public SSO endpoints are available yet.
+
+### Local developer registry prototype
+`authorization-server/registry.js` provides local pending-review app records with random public client IDs and owner-filtered reads; it is **not an authenticated endpoint**. See `authorization-server/REGISTRY.md`. Run `npm.cmd test` in that directory to execute both validation and registry tests.
