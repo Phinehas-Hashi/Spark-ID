@@ -1,6 +1,9 @@
 package com.sparkstack.sparkid
 
 import android.os.Bundle
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.platform.LocalContext
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -31,7 +34,7 @@ private val Muted = Color(0xFF9AA6BD)
 private val Panel = Color(0xFF111B30)
 private val Background = Color(0xFF050816)
 
-private enum class Screen { Welcome, Login, Register, Dashboard, Identity, Security, Recovery }
+private enum class Screen { Welcome, Login, Register, Dashboard, Identity, Security, Recovery, Apps, Developer }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -71,7 +74,7 @@ private fun SparkApp() {
     }
     BackHandler(!checkingSession && screen != Screen.Welcome) {
         screen = when (screen) {
-            Screen.Identity, Screen.Security -> Screen.Dashboard
+            Screen.Identity, Screen.Security, Screen.Apps, Screen.Developer -> Screen.Dashboard
             Screen.Dashboard -> Screen.Dashboard
             Screen.Login, Screen.Register, Screen.Recovery -> Screen.Welcome
             Screen.Welcome -> Screen.Welcome
@@ -86,7 +89,10 @@ private fun SparkApp() {
                     Text("Checking your Spark ID…", color = Muted)
                 }
             }
-        } else when (screen) {
+        } else AnimatedContent(targetState = screen, transitionSpec = {
+            slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(260)) + androidx.compose.animation.fadeIn(tween(260)) togetherWith
+                slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(220)) + androidx.compose.animation.fadeOut(tween(220))
+        }, label = "Spark ID navigation") { activeScreen -> when (activeScreen) {
             Screen.Welcome -> Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Login -> AuthScreen(false, busy, error, onSubmit = { name, email, password -> authenticate(false, name, email, password) }, onBack = { error = null; screen = Screen.Welcome }, onSwitch = { error = null; screen = Screen.Register }, onForgot = { error = null; securityMessage = null; screen = Screen.Recovery })
             Screen.Register -> AuthScreen(true, busy, error, onSubmit = { name, email, password -> authenticate(true, name, email, password) }, onBack = { error = null; screen = Screen.Welcome }, onSwitch = { error = null; screen = Screen.Login })
@@ -98,7 +104,7 @@ private fun SparkApp() {
                         .onFailure { error = it.message ?: "Could not request recovery." }
                 }
             }, onBack = { error = null; securityMessage = null; screen = Screen.Login })
-            Screen.Dashboard -> if (user != null) Dashboard(user!!, busy, error, onIdentity = { screen = Screen.Identity }, onSecurity = { screen = Screen.Security }, onExit = {
+            Screen.Dashboard -> if (user != null) Dashboard(user!!, busy, error, onIdentity = { screen = Screen.Identity }, onSecurity = { screen = Screen.Security }, onApps = { screen = Screen.Apps }, onDeveloper = { screen = Screen.Developer }, onExit = {
                 error = null; busy = true
                 auth.logout { result ->
                     busy = false
@@ -106,6 +112,8 @@ private fun SparkApp() {
                         .onFailure { error = it.message ?: "Could not sign out." }
                 }
             }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
+            Screen.Apps -> if (user != null) ConnectedApps(onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
+            Screen.Developer -> if (user != null) DeveloperHub(onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Identity -> if (user != null) Identity(user!!, busy, error, profileMessage,
                 onSave = { name ->
                     busy = true; error = null; profileMessage = null
@@ -138,7 +146,7 @@ private fun SparkApp() {
                     }
                 }, onBack = { screen = Screen.Dashboard })
                 else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
-        }
+        } }
     }
 }
 
@@ -249,20 +257,58 @@ private fun InfoCard(title: String, detail: String) {
 }
 
 @Composable
-private fun Dashboard(user: SparkUser, busy: Boolean, error: String?, onIdentity: () -> Unit, onSecurity: () -> Unit, onExit: () -> Unit) {
+private fun Dashboard(user: SparkUser, busy: Boolean, error: String?, onIdentity: () -> Unit, onSecurity: () -> Unit, onApps: () -> Unit, onDeveloper: () -> Unit, onExit: () -> Unit) {
     Page {
-        Text("SPARK STACK INTERNATIONAL", color = Gold, fontSize = 12.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold)
-        Text("Welcome, ${user.name.ifBlank { user.email }}.", color = Color.White, fontSize = 30.sp, lineHeight = 37.sp, fontWeight = FontWeight.Bold)
-        Text(user.email, color = Muted)
-        Spacer(Modifier.height(12.dp))
-        InfoCard("✦ Spark ID", "Your connected identity card, profile and account settings.")
-        Action("View Spark ID profile", onIdentity)
-        Action("Account security", onSecurity, primary = false)
-        InfoCard("Spark Academy", "Learn new skills and grow your career. Integration planned.")
-        InfoCard("SparkSocial", "Find your people and build your network. Integration planned.")
-        InfoCard("Ignite Pay", "A separate secure payments experience. Integration planned.")
+        Text("SPARK STACK  /  IDENTITY", color = Gold, fontSize = 12.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold)
+        Text("Your identity hub", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold)
+        Text("Welcome back, ${user.name.ifBlank { "Spark member" }}", color = Muted)
+        Column(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF193654), Panel)), RoundedCornerShape(24.dp))
+            .border(1.dp, Blue.copy(alpha = .55f), RoundedCornerShape(24.dp)).padding(22.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("✦  SPARK ID", color = Gold, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
+            Text(user.name.ifBlank { "Spark member" }, color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+            Text(user.email, color = Muted)
+            HorizontalDivider(color = Muted.copy(alpha = .25f))
+            Text(if (user.emailVerified) "✓ Email verified" else "○ Email verification pending", color = if (user.emailVerified) Color(0xFF79D7B0) else Gold)
+            Text("ACCOUNT  •  ${user.id.take(12)}…", color = Muted, fontSize = 11.sp)
+        }
+        Text("Manage", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Action("My Spark ID  →", onIdentity)
+        Action("Account security  →", onSecurity, primary = false)
+        Action("Connected apps  →", onApps, primary = false)
+        Text("Build with Spark ID", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        InfoCard("Developer platform", "Explore integration architecture, developer onboarding and the upcoming secure authorization platform.")
+        Action("Open Developer Hub  →", onDeveloper, primary = false)
         if (error != null) Text(error, color = Color(0xFFFF7777))
         Action(if (busy) "Signing out…" else "Sign out", onExit, primary = false, enabled = !busy)
+    }
+}
+
+@Composable
+private fun ConnectedApps(onBack: () -> Unit) {
+    Page {
+        TextButton(onClick = onBack) { Text("← Identity hub", color = Gold) }
+        Text("Connected apps", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+        Text("Your future home for reviewing and managing access to Spark Stack services.", color = Muted, lineHeight = 22.sp)
+        InfoCard("Spark Stack Academy", "Learning and student services • Integration planned")
+        InfoCard("SparkSocial", "Community and social identity • Integration planned")
+        InfoCard("Ignite Pay", "Payments will require separate financial safeguards and explicit authorization • Integration planned")
+        InfoCard("Spark Studio", "Creative and developer services • Integration planned")
+        Text("No app connections are reported yet. This directory does not grant access or share your account credentials.", color = Muted, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun DeveloperHub(onBack: () -> Unit) {
+    Page {
+        TextButton(onClick = onBack) { Text("← Identity hub", color = Gold) }
+        Text("Developer Hub", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+        Text("Build experiences that can eventually connect to Spark ID.", color = Muted, lineHeight = 22.sp)
+        InfoCard("Developer access • Coming soon", "Third-party app registration, client identifiers, approved redirect URIs and integration credentials are not issued yet.")
+        InfoCard("Integration model", "Planned standards-based OAuth 2.1 / OpenID Connect authorization with PKCE for public clients, scoped permissions and server-side token validation.")
+        InfoCard("App management", "Future tools: register an app, manage redirect URIs, rotate credentials, inspect integration activity and revoke access.")
+        InfoCard("Security first", "Never collect another user's Spark ID password in your own app. Never embed privileged Appwrite API keys or share Android session cookies between apps.")
+        InfoCard("Current status", "Spark ID account registration, sign-in, email verification and password recovery work in the first-party Android app. Public developer authentication APIs are not live.")
     }
 }
 
