@@ -18,11 +18,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Apps
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -96,14 +91,14 @@ private fun SparkApp() {
         if (!checkingSession && user != null && screen in tabs) {
             NavigationBar(containerColor = Panel) {
                 listOf(
-                    Triple(Screen.Dashboard, "Home", Icons.Filled.Home),
-                    Triple(Screen.Apps, "Apps", Icons.Filled.Apps),
-                    Triple(Screen.Notifications, "Alerts", Icons.Filled.Notifications),
-                    Triple(Screen.Identity, "Profile", Icons.Filled.Person)
+                    Triple(Screen.Dashboard, "Home", "⌂"),
+                    Triple(Screen.Apps, "Apps", "▦"),
+                    Triple(Screen.Notifications, "Alerts", "♧"),
+                    Triple(Screen.Identity, "Profile", "◉")
                 ).forEach { (destination, label, symbol) ->
                     NavigationBarItem(
                         selected = screen == destination, onClick = { screen = destination },
-                        icon = { Icon(symbol, contentDescription = label) }, label = { Text(label) },
+                        icon = { Text(symbol, fontSize = 22.sp) }, label = { Text(label) },
                         alwaysShowLabel = true,
                         colors = NavigationBarItemDefaults.colors(selectedIconColor = Background, selectedTextColor = Gold, indicatorColor = Gold, unselectedIconColor = Muted, unselectedTextColor = Muted)
                     )
