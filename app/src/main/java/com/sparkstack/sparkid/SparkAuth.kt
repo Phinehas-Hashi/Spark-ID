@@ -92,18 +92,22 @@ class SparkAuth(context: Context) {
                     else -> json.optString("message").ifBlank { "Request failed ($status)." }
                 }
             )
-            // Appwrite can send multiple Set-Cookie headers, including cookie removals.
-            // Select only this project's non-empty session cookie.
+            // Appwrite REST may return both modern and legacy project session cookies.
+            // Forward both as a Cookie header, not just the first Set-Cookie value.
             val cookieName = "a_session_${projectId}"
-            val freshCookie = connection.headerFields.entries
+            val freshCookies = connection.headerFields.entries
                 .filter { it.key?.equals("Set-Cookie", ignoreCase = true) == true }
                 .flatMap { it.value.orEmpty() }
                 .map { it.substringBefore(';').trim() }
-                .firstOrNull { it.startsWith("$cookieName=") && it.substringAfter('=').isNotBlank() &&
-                    it.substringAfter('=').lowercase() != "deleted" }
-            if (freshCookie != null) {
-                sessionCookie = freshCookie
-                saveCookie(freshCookie)
+                .filter { cookie ->
+                    val name = cookie.substringBefore('=')
+                    val value = cookie.substringAfter('=', "")
+                    (name == cookieName || name == "${cookieName}_legacy") &&
+                        value.isNotBlank() && value.lowercase() != "deleted"
+                }
+            if (freshCookies.isNotEmpty()) {
+                sessionCookie = freshCookies.joinToString("; ")
+                saveCookie(sessionCookie!!)
             }
             return json
         } finally { connection.disconnect() }
