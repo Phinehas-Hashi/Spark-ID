@@ -12,7 +12,7 @@ function setup() {
     replaceRedirects: async (credential, id, redirects) => { calls.push(["update", credential, id, redirects]); return { id, status: "pending" }; }
   } });
   async function send(method, url, body, headers = {}) {
-    const req = Readable.from(body === undefined ? [] : [typeof body === "string" ? body : JSON.stringify(body)]);
+    const req = Readable.from(body === undefined ? [] : [Buffer.from(typeof body === "string" ? body : JSON.stringify(body), "utf8")]);
     req.method = method; req.url = url; req.headers = headers;
     const res = { setHeader() {}, writeHead(status, headers) { this.status = status; this.headers = headers; },
       end(data) { this.body = JSON.parse(data); } };
