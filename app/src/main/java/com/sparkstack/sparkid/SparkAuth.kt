@@ -62,7 +62,7 @@ class SparkAuth(context: Context) {
 
     private class SessionExpiredException : IllegalStateException("Session expired. Please sign in again.")
 
-    private fun request(method: String, path: String, body: JSONObject? = null): JSONObject {
+    private fun request(method: String, path: String, body: JSONObject? = null, sendSession: Boolean = true): JSONObject {
         val connection = URL(endpoint + "/account" + path).openConnection() as HttpURLConnection
         try {
             connection.requestMethod = method
@@ -70,7 +70,7 @@ class SparkAuth(context: Context) {
             connection.readTimeout = 15000
             connection.setRequestProperty("X-Appwrite-Project", projectId)
             connection.setRequestProperty("Accept", "application/json")
-            sessionCookie?.let { connection.setRequestProperty("Cookie", it) }
+            if (sendSession) sessionCookie?.let { connection.setRequestProperty("Cookie", it) }
             if (body != null) {
                 connection.doOutput = true
                 connection.setRequestProperty("Content-Type", "application/json")
@@ -82,16 +82,29 @@ class SparkAuth(context: Context) {
             val json = runCatching { JSONObject(raw) }.getOrElse { JSONObject() }
             if (status !in 200..299) throw IllegalStateException(
                 when (status) {
-                    401 -> if (path.isEmpty() && method == "GET") throw SessionExpiredException() else "Incorrect credentials or expired session."
+                    401 -> when { 
+                        path.isEmpty() && method == "GET" -> throw SessionExpiredException()
+                        path == "/sessions/email" && method == "POST" -> "Email or password was not accepted. Check your details or reset your password."
+                        else -> "Authentication required. Please sign in again."
+                    }
                     409 -> "An account with this email already exists."
                     429 -> "Too many attempts. Please try again later."
                     else -> json.optString("message").ifBlank { "Request failed ($status)." }
                 }
             )
-            connection.headerFields.entries
-                .firstOrNull { it.key?.equals("Set-Cookie", ignoreCase = true) == true }
-                ?.value?.firstOrNull { it.startsWith("a_session_", ignoreCase = true) && !it.startsWith("a_session_${projectId}_legacy", ignoreCase = true) }
-                ?.let { sessionCookie = it.substringBefore(';'); saveCookie(sessionCookie!!) }
+            // Appwrite can send multiple Set-Cookie headers, including cookie removals.
+            // Select only this project's non-empty session cookie.
+            val cookieName = "a_session_${projectId}"
+            val freshCookie = connection.headerFields.entries
+                .filter { it.key?.equals("Set-Cookie", ignoreCase = true) == true }
+                .flatMap { it.value.orEmpty() }
+                .map { it.substringBefore(';').trim() }
+                .firstOrNull { it.startsWith("$cookieName=") && it.substringAfter('=').isNotBlank() &&
+                    it.substringAfter('=').lowercase() != "deleted" }
+            if (freshCookie != null) {
+                sessionCookie = freshCookie
+                saveCookie(freshCookie)
+            }
             return json
         } finally { connection.disconnect() }
     }
@@ -140,7 +153,9 @@ class SparkAuth(context: Context) {
     }
 
     fun login(email: String, password: String, done: (Result<SparkUser>) -> Unit) = execute(done) {
-        request("POST", "/sessions/email", JSONObject().put("email", email.trim()).put("password", password))
+        clearCookie()
+        request("POST", "/sessions/email", JSONObject().put("email", email.trim()).put("password", password), sendSession = false)
+        if (sessionCookie == null) throw IllegalStateException("Sign-in succeeded but no Appwrite session cookie was received. Please retry.")
         parseUser(request("GET", ""))
     }
 
