@@ -50,6 +50,7 @@ private fun SparkApp() {
     var user by remember { mutableStateOf<SparkUser?>(null) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var securityMessage by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         auth.restore { result ->
             result.onSuccess { restored -> if (restored != null) { user = restored; screen = Screen.Dashboard } }
@@ -97,8 +98,15 @@ private fun SparkApp() {
                 }
             }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Identity -> if (user != null) Identity(user!!, onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
-            Screen.Security -> if (user != null) Security(user!!, busy, error,
-                onRefresh = {
+            Screen.Security -> if (user != null) Security(user!!, busy, error, securityMessage,
+                onPasswordChange = { oldPassword, newPassword ->
+                    busy = true; error = null; securityMessage = null
+                    auth.changePassword(oldPassword, newPassword) { result ->
+                        busy = false
+                        result.onSuccess { securityMessage = "Password updated successfully." }
+                            .onFailure { error = it.message ?: "Password update failed." }
+                    }
+                }, onRefresh = {
                     busy = true; error = null
                     auth.refresh { result ->
                         busy = false
@@ -259,7 +267,10 @@ private fun Identity(user: SparkUser, onBack: () -> Unit) {
 }
 
 @Composable
-private fun Security(user: SparkUser, busy: Boolean, error: String?, onRefresh: () -> Unit, onBack: () -> Unit) {
+private fun Security(user: SparkUser, busy: Boolean, error: String?, message: String?, onPasswordChange: (String, String) -> Unit, onRefresh: () -> Unit, onBack: () -> Unit) {
+    var oldPassword by remember { mutableStateOf("") }
+    var newPassword by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
     Page {
         TextButton(onClick = onBack) { Text("← Dashboard", color = Gold) }
         Text("Account security", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
@@ -267,9 +278,20 @@ private fun Security(user: SparkUser, busy: Boolean, error: String?, onRefresh: 
         InfoCard("Email address", user.email)
         InfoCard("Email verification", if (user.emailVerified) "Verified" else "Not verified")
         InfoCard("Session", "Your current session is encrypted on this device and checked against Appwrite at startup.")
+        Text("Change password", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+        SparkField(oldPassword, { oldPassword = it }, "Current password", password = true)
+        SparkField(newPassword, { newPassword = it }, "New password", password = true)
+        SparkField(confirmPassword, { confirmPassword = it }, "Confirm new password", password = true)
+        if (newPassword.isNotEmpty() && confirmPassword.isNotEmpty() && newPassword != confirmPassword)
+            Text("New passwords do not match.", color = Color(0xFFFF7777), fontSize = 12.sp)
         if (error != null) Text(error, color = Color(0xFFFF7777))
+        if (message != null) Text(message, color = Gold)
         if (busy) CircularProgressIndicator(color = Gold)
-        Action(if (busy) "Checking…" else "Refresh account status", onRefresh, enabled = !busy)
+        Action("Update password", {
+            onPasswordChange(oldPassword, newPassword)
+            oldPassword = ""; newPassword = ""; confirmPassword = ""
+        }, enabled = !busy && oldPassword.isNotEmpty() && newPassword.length >= 8 && newPassword == confirmPassword)
+        Action(if (busy) "Checking…" else "Refresh account status", onRefresh, primary = false, enabled = !busy)
         Text("Email verification and password recovery links will be enabled with a registered app callback URL. This screen does not claim identity/KYC verification.", color = Muted, fontSize = 12.sp)
     }
 }

@@ -114,6 +114,12 @@ class SparkAuth(context: Context) {
         parseUser(request("GET", ""))
     }
 
+    fun changePassword(oldPassword: String, newPassword: String, done: (Result<Unit>) -> Unit) = execute(done) {
+        require(newPassword.length >= 8) { "New password must contain at least 8 characters." }
+        request("PATCH", "/password", JSONObject().put("password", newPassword).put("oldPassword", oldPassword))
+        Unit
+    }
+
     fun login(email: String, password: String, done: (Result<SparkUser>) -> Unit) = execute(done) {
         request("POST", "/sessions/email", JSONObject().put("email", email.trim()).put("password", password))
         parseUser(request("GET", ""))

@@ -1,19 +1,17 @@
 # Spark ID
 
-Spark Stack International Android app, connected to Appwrite Cloud.
+Native Android identity app for Spark Stack International.
 
-- Endpoint: https://fra.cloud.appwrite.io/v1
-- Project ID: 6accc223002dbb161c74
-- Register Android platform package: `com.sparkstack.sparkid`
+Appwrite project ID: `6accc223002dbb161c74`. Endpoint: `https://fra.cloud.appwrite.io/v1`. Android package: `com.sparkstack.sparkid`.
 
 ## Implemented
-- Real Appwrite email/password registration and login using public Account REST endpoints
-- Network requests on a background executor, busy states and errors
-- Authenticated dashboard and account profile
-- Current-session logout
-- Session cookie in memory only: app restart requires another sign-in
-- No server API key, no pretend KYC or OAuth identity provider
+- Real registration, login and logout
+- Encrypted session persistence with Android Keystore; server validation at launch
+- Protected dashboard and profile; account email-verification status from Appwrite
+- Account Security screen: refresh account status and change password using Appwrite's authenticated Account API
+- No privileged API keys embedded in Android
 
-Build on Windows: `.\\gradlew.bat assembleDebug`.
+## Next: email links
+Verification and forgot-password emails require an owned, registered HTTPS callback URL with an actual hosted handler (and optionally Android App Links). These actions remain disabled until that infrastructure exists; do not invent a callback domain or claim verification based on sign-in. Account profile is not government identity/KYC.
 
-If account creation succeeds but session creation fails, sign in with the existing account instead of registering again. This version has not yet been device-tested.
+Build on Windows: `.\\gradlew.bat assembleDebug`. Test changing password, signing out, and signing in with the new password. Do not send passwords or tokens in bug reports.
