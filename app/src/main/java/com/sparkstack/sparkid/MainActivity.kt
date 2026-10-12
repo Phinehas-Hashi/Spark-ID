@@ -46,9 +46,16 @@ private fun SparkApp() {
     val context = LocalContext.current
     val auth = remember { SparkAuth(context.applicationContext) }
     var screen by remember { mutableStateOf(Screen.Welcome) }
+    var checkingSession by remember { mutableStateOf(true) }
     var user by remember { mutableStateOf<SparkUser?>(null) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        auth.restore { result ->
+            result.onSuccess { restored -> if (restored != null) { user = restored; screen = Screen.Dashboard } }
+            checkingSession = false
+        }
+    }
     fun authenticate(register: Boolean, name: String, email: String, password: String) {
         error = null
         busy = true
@@ -60,7 +67,7 @@ private fun SparkApp() {
         if (register) auth.register(name, email, password, callback)
         else auth.login(email, password, callback)
     }
-    BackHandler(screen != Screen.Welcome) {
+    BackHandler(!checkingSession && screen != Screen.Welcome) {
         screen = when (screen) {
             Screen.Identity -> Screen.Dashboard
             Screen.Dashboard -> Screen.Dashboard
@@ -69,7 +76,15 @@ private fun SparkApp() {
         }
     }
     Surface(color = Background, modifier = Modifier.fillMaxSize()) {
-        when (screen) {
+        if (checkingSession) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = Gold)
+                    Spacer(Modifier.height(18.dp))
+                    Text("Checking your Spark ID…", color = Muted)
+                }
+            }
+        } else when (screen) {
             Screen.Welcome -> Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Login -> AuthScreen(false, busy, error, onSubmit = { name, email, password -> authenticate(false, name, email, password) }, onBack = { error = null; screen = Screen.Welcome }, onSwitch = { error = null; screen = Screen.Register })
             Screen.Register -> AuthScreen(true, busy, error, onSubmit = { name, email, password -> authenticate(true, name, email, password) }, onBack = { error = null; screen = Screen.Welcome }, onSwitch = { error = null; screen = Screen.Login })
