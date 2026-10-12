@@ -1,5 +1,4 @@
 "use strict";
-const http = require("node:http");
 
 // Injectable HTTP boundary. No server starts on import. Deploy only behind HTTPS.
 // Credential is an opaque session token; never place it in a URL.
