@@ -1,6 +1,8 @@
 package com.sparkstack.sparkid
 
 import android.os.Bundle
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.AnimatedContentTransitionScope
@@ -301,6 +303,7 @@ private fun ConnectedApps(onBack: () -> Unit) {
 
 @Composable
 private fun DeveloperHub(onBack: () -> Unit) {
+    val context = LocalContext.current
     Page {
         TextButton(onClick = onBack) { Text("← Identity hub", color = Gold) }
         Text("Developer Hub", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
@@ -310,6 +313,9 @@ private fun DeveloperHub(onBack: () -> Unit) {
         InfoCard("App management", "Future tools: register an app, manage redirect URIs, rotate credentials, inspect integration activity and revoke access.")
         InfoCard("Security first", "Never collect another user's Spark ID password in your own app. Never embed privileged Appwrite API keys or share Android session cookies between apps.")
         InfoCard("Current status", "Spark ID account registration, sign-in, email verification and password recovery work in the first-party Android app. Public developer authentication APIs are not live.")
+        Action("Read developer integration guide  ↗", onClick = {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://phinehas-hashi.github.io/Spark-ID/developers.html")))
+        })
     }
 }
 

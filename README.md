@@ -13,6 +13,10 @@ Real registration/login/logout, Android Keystore-encrypted persistent session wi
 3. Expected callback base URL, subject to actual deployment: `https://phinehas-hashi.github.io/Spark-ID/`. Appwrite recovery/verification requests should use `?mode=recover` or `?mode=verify` respectively, and Appwrite will append `userId` and `secret`.
 4. Test with a disposable account. Do not share reset/verification URLs, tokens, or passwords.
 
-The Android app does **not yet send these emails**; wait until the hosted URL is verified. GitHub Pages is a public static host, not a privileged backend. This callback is a browser fallback; verified Android App Links require a controlled domain and Digital Asset Links configuration.
+The Android app sends verification and recovery emails; both callback flows have been tested successfully. GitHub Pages is a public static host, not a privileged backend. This callback is a browser fallback; verified Android App Links require a controlled domain and Digital Asset Links configuration. GitHub Pages is a public static host, not a privileged backend. This callback is a browser fallback; verified Android App Links require a controlled domain and Digital Asset Links configuration.
 
 Windows build: `.\\gradlew.bat assembleDebug`.
+
+
+## Developer platform preview
+`docs/developers.html` publishes the planned third-party integration contract and is linked from the Android Developer Hub. **No public OAuth/OIDC provider, developer registration or token issuance is live yet.** The existing Appwrite Account API and first-party session cookie are not a third-party SSO protocol. See the guide for required authorization server, PKCE, redirect validation, scopes, consent, token verification and revocation milestones.
