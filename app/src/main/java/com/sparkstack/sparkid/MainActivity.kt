@@ -51,6 +51,7 @@ private fun SparkApp() {
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var securityMessage by remember { mutableStateOf<String?>(null) }
+    var profileMessage by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         auth.restore { result ->
             result.onSuccess { restored -> if (restored != null) { user = restored; screen = Screen.Dashboard } }
@@ -97,7 +98,15 @@ private fun SparkApp() {
                         .onFailure { error = it.message ?: "Could not sign out." }
                 }
             }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
-            Screen.Identity -> if (user != null) Identity(user!!, onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
+            Screen.Identity -> if (user != null) Identity(user!!, busy, error, profileMessage,
+                onSave = { name ->
+                    busy = true; error = null; profileMessage = null
+                    auth.updateName(name) { result ->
+                        busy = false
+                        result.onSuccess { user = it; profileMessage = "Profile updated successfully." }
+                            .onFailure { error = it.message ?: "Could not update profile." }
+                    }
+                }, onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Security -> if (user != null) Security(user!!, busy, error, securityMessage,
                 onPasswordChange = { oldPassword, newPassword ->
                     busy = true; error = null; securityMessage = null
@@ -242,7 +251,8 @@ private fun Dashboard(user: SparkUser, busy: Boolean, error: String?, onIdentity
 }
 
 @Composable
-private fun Identity(user: SparkUser, onBack: () -> Unit) {
+private fun Identity(user: SparkUser, busy: Boolean, error: String?, message: String?, onSave: (String) -> Unit, onBack: () -> Unit) {
+    var editedName by remember(user.id) { mutableStateOf(user.name) }
     Page {
         TextButton(onClick = onBack) { Text("← Dashboard", color = Gold) }
         Spacer(Modifier.height(18.dp))
@@ -262,7 +272,13 @@ private fun Identity(user: SparkUser, onBack: () -> Unit) {
             Text("Account ID: ${user.id}", color = Muted, fontSize = 12.sp)
             Text("Account profile only. This is not government ID or verified KYC.", color = Muted, fontSize = 12.sp)
         }
-        InfoCard("Security first", "Real identity issuance, account security and connected-app permissions will be implemented with the backend.")
+        Text("Edit account profile", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+        SparkField(editedName, { editedName = it }, "Display name")
+        if (error != null) Text(error, color = Color(0xFFFF7777), fontSize = 13.sp)
+        if (message != null) Text(message, color = Gold, fontSize = 13.sp)
+        if (busy) CircularProgressIndicator(color = Gold)
+        Action("Save profile", { onSave(editedName.trim()) }, enabled = !busy && editedName.trim().isNotEmpty() && editedName.trim() != user.name)
+        InfoCard("About your profile", "Your display name is stored in your Appwrite account. Changing it does not verify your legal identity.")
     }
 }
 

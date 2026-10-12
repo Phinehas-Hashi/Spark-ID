@@ -114,6 +114,12 @@ class SparkAuth(context: Context) {
         parseUser(request("GET", ""))
     }
 
+    fun updateName(name: String, done: (Result<SparkUser>) -> Unit) = execute(done) {
+        require(name.trim().isNotEmpty()) { "Enter a display name." }
+        require(name.trim().length <= 128) { "Display name is too long." }
+        parseUser(request("PATCH", "/name", JSONObject().put("name", name.trim())))
+    }
+
     fun changePassword(oldPassword: String, newPassword: String, done: (Result<Unit>) -> Unit) = execute(done) {
         require(newPassword.length >= 8) { "New password must contain at least 8 characters." }
         request("PATCH", "/password", JSONObject().put("password", newPassword).put("oldPassword", oldPassword))
