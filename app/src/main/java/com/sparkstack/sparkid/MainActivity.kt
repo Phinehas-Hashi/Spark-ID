@@ -31,7 +31,7 @@ private val Muted = Color(0xFF9AA6BD)
 private val Panel = Color(0xFF111B30)
 private val Background = Color(0xFF050816)
 
-private enum class Screen { Welcome, Login, Register, Dashboard, Identity, Security }
+private enum class Screen { Welcome, Login, Register, Dashboard, Identity, Security, Recovery }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -73,7 +73,7 @@ private fun SparkApp() {
         screen = when (screen) {
             Screen.Identity, Screen.Security -> Screen.Dashboard
             Screen.Dashboard -> Screen.Dashboard
-            Screen.Login, Screen.Register -> Screen.Welcome
+            Screen.Login, Screen.Register, Screen.Recovery -> Screen.Welcome
             Screen.Welcome -> Screen.Welcome
         }
     }
@@ -88,8 +88,16 @@ private fun SparkApp() {
             }
         } else when (screen) {
             Screen.Welcome -> Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
-            Screen.Login -> AuthScreen(false, busy, error, onSubmit = { name, email, password -> authenticate(false, name, email, password) }, onBack = { error = null; screen = Screen.Welcome }, onSwitch = { error = null; screen = Screen.Register })
+            Screen.Login -> AuthScreen(false, busy, error, onSubmit = { name, email, password -> authenticate(false, name, email, password) }, onBack = { error = null; screen = Screen.Welcome }, onSwitch = { error = null; screen = Screen.Register }, onForgot = { error = null; securityMessage = null; screen = Screen.Recovery })
             Screen.Register -> AuthScreen(true, busy, error, onSubmit = { name, email, password -> authenticate(true, name, email, password) }, onBack = { error = null; screen = Screen.Welcome }, onSwitch = { error = null; screen = Screen.Login })
+            Screen.Recovery -> Recovery(busy, error, securityMessage, onSend = { email ->
+                busy = true; error = null; securityMessage = null
+                auth.sendRecovery(email) { result ->
+                    busy = false
+                    result.onSuccess { securityMessage = "If the address is eligible, Appwrite will send a recovery email. Check your inbox and spam folder." }
+                        .onFailure { error = it.message ?: "Could not request recovery." }
+                }
+            }, onBack = { error = null; securityMessage = null; screen = Screen.Login })
             Screen.Dashboard -> if (user != null) Dashboard(user!!, busy, error, onIdentity = { screen = Screen.Identity }, onSecurity = { screen = Screen.Security }, onExit = {
                 error = null; busy = true
                 auth.logout { result ->
@@ -114,6 +122,13 @@ private fun SparkApp() {
                         busy = false
                         result.onSuccess { securityMessage = "Password updated successfully." }
                             .onFailure { error = it.message ?: "Password update failed." }
+                    }
+                }, onVerify = {
+                    busy = true; error = null; securityMessage = null
+                    auth.sendVerification { result ->
+                        busy = false
+                        result.onSuccess { securityMessage = "Verification email requested. Open the link in your inbox, then refresh your account status." }
+                            .onFailure { error = it.message ?: "Could not send verification email." }
                     }
                 }, onRefresh = {
                     busy = true; error = null
@@ -181,7 +196,7 @@ private fun Welcome(onLogin: () -> Unit, onRegister: () -> Unit) {
 }
 
 @Composable
-private fun AuthScreen(register: Boolean, busy: Boolean, error: String?, onSubmit: (String, String, String) -> Unit, onBack: () -> Unit, onSwitch: () -> Unit) {
+private fun AuthScreen(register: Boolean, busy: Boolean, error: String?, onSubmit: (String, String, String) -> Unit, onBack: () -> Unit, onSwitch: () -> Unit, onForgot: (() -> Unit)? = null) {
     var name by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -200,6 +215,7 @@ private fun AuthScreen(register: Boolean, busy: Boolean, error: String?, onSubmi
         Action(if (register) "Create account" else "Sign in", { onSubmit(name, email, password) },
             enabled = !busy && email.contains("@") && password.length >= 8 && (!register || name.isNotBlank()))
         Text("Password must be at least 8 characters.", color = Muted, fontSize = 12.sp)
+        if (!register && onForgot != null) TextButton(onClick = onForgot, enabled = !busy) { Text("Forgot password?", color = Gold) }
         TextButton(onClick = onSwitch) {
             Text(if (register) "Already registered? Sign in" else "New here? Create Spark ID", color = Gold)
         }
@@ -283,7 +299,7 @@ private fun Identity(user: SparkUser, busy: Boolean, error: String?, message: St
 }
 
 @Composable
-private fun Security(user: SparkUser, busy: Boolean, error: String?, message: String?, onPasswordChange: (String, String) -> Unit, onRefresh: () -> Unit, onBack: () -> Unit) {
+private fun Security(user: SparkUser, busy: Boolean, error: String?, message: String?, onPasswordChange: (String, String) -> Unit, onVerify: () -> Unit, onRefresh: () -> Unit, onBack: () -> Unit) {
     var oldPassword by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
@@ -293,6 +309,7 @@ private fun Security(user: SparkUser, busy: Boolean, error: String?, message: St
         Text("Your account status is read from Appwrite, not assumed from sign-in.", color = Muted)
         InfoCard("Email address", user.email)
         InfoCard("Email verification", if (user.emailVerified) "Verified" else "Not verified")
+        if (!user.emailVerified) Action("Send verification email", onVerify, enabled = !busy)
         InfoCard("Session", "Your current session is encrypted on this device and checked against Appwrite at startup.")
         Text("Change password", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
         SparkField(oldPassword, { oldPassword = it }, "Current password", password = true)
@@ -308,6 +325,23 @@ private fun Security(user: SparkUser, busy: Boolean, error: String?, message: St
             oldPassword = ""; newPassword = ""; confirmPassword = ""
         }, enabled = !busy && oldPassword.isNotEmpty() && newPassword.length >= 8 && newPassword == confirmPassword)
         Action(if (busy) "Checking…" else "Refresh account status", onRefresh, primary = false, enabled = !busy)
-        Text("Email verification and password recovery links will be enabled with a registered app callback URL. This screen does not claim identity/KYC verification.", color = Muted, fontSize = 12.sp)
+        Text("Verification and recovery links open the Spark ID HTTPS callback page. Email verification does not constitute government identity/KYC verification.", color = Muted, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun Recovery(busy: Boolean, error: String?, message: String?, onSend: (String) -> Unit, onBack: () -> Unit) {
+    var email by remember { mutableStateOf("") }
+    Page {
+        TextButton(onClick = onBack) { Text("← Sign in", color = Gold) }
+        Spacer(Modifier.height(22.dp))
+        Text("Recover your Spark ID", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+        Text("Enter your account email. A recovery link will open our secure HTTPS callback page.", color = Muted)
+        SparkField(email, { email = it }, "Email address", KeyboardType.Email)
+        if (error != null) Text(error, color = Color(0xFFFF7777), fontSize = 13.sp)
+        if (message != null) Text(message, color = Gold, fontSize = 13.sp)
+        if (busy) CircularProgressIndicator(color = Gold)
+        Action("Send recovery email", { onSend(email.trim()) }, enabled = !busy && email.trim().contains("@"))
+        Text("Never share recovery links or codes. After resetting your password, return here to sign in.", color = Muted, fontSize = 12.sp)
     }
 }

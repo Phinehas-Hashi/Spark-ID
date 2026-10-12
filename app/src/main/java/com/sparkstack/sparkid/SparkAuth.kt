@@ -114,6 +114,19 @@ class SparkAuth(context: Context) {
         parseUser(request("GET", ""))
     }
 
+    private val callbackBase = "https://phinehas-hashi.github.io/Spark-ID/"
+
+    fun sendVerification(done: (Result<Unit>) -> Unit) = execute(done) {
+        request("POST", "/verification", JSONObject().put("url", callbackBase + "?mode=verify"))
+        Unit
+    }
+
+    fun sendRecovery(email: String, done: (Result<Unit>) -> Unit) = execute(done) {
+        require(email.trim().contains("@")) { "Enter a valid email address." }
+        request("POST", "/recovery", JSONObject().put("email", email.trim()).put("url", callbackBase + "?mode=recover"))
+        Unit
+    }
+
     fun updateName(name: String, done: (Result<SparkUser>) -> Unit) = execute(done) {
         require(name.trim().isNotEmpty()) { "Enter a display name." }
         require(name.trim().length <= 128) { "Display name is too long." }
