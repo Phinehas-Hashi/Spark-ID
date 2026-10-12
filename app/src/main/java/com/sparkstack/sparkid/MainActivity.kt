@@ -18,6 +18,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -77,13 +82,36 @@ private fun SparkApp() {
     }
     BackHandler(!checkingSession && screen != Screen.Welcome) {
         screen = when (screen) {
-            Screen.Identity, Screen.Security, Screen.Apps, Screen.Developer, Screen.Notifications, Screen.FounderConsole -> Screen.Dashboard
+            Screen.Identity, Screen.Apps, Screen.Notifications -> Screen.Dashboard
+            Screen.Security -> Screen.Identity
+            Screen.FounderConsole -> Screen.Developer
+            Screen.Developer -> Screen.Dashboard
             Screen.Dashboard -> Screen.Dashboard
             Screen.Login, Screen.Register, Screen.Recovery -> Screen.Welcome
             Screen.Welcome -> Screen.Welcome
         }
     }
-    Surface(color = Background, modifier = Modifier.fillMaxSize()) {
+    val tabs = setOf(Screen.Dashboard, Screen.Apps, Screen.Notifications, Screen.Identity)
+    Scaffold(containerColor = Background, bottomBar = {
+        if (!checkingSession && user != null && screen in tabs) {
+            NavigationBar(containerColor = Panel) {
+                listOf(
+                    Triple(Screen.Dashboard, "Home", Icons.Filled.Home),
+                    Triple(Screen.Apps, "Apps", Icons.Filled.Apps),
+                    Triple(Screen.Notifications, "Alerts", Icons.Filled.Notifications),
+                    Triple(Screen.Identity, "Profile", Icons.Filled.Person)
+                ).forEach { (destination, label, symbol) ->
+                    NavigationBarItem(
+                        selected = screen == destination, onClick = { screen = destination },
+                        icon = { Icon(symbol, contentDescription = label) }, label = { Text(label) },
+                        alwaysShowLabel = true,
+                        colors = NavigationBarItemDefaults.colors(selectedIconColor = Background, selectedTextColor = Gold, indicatorColor = Gold, unselectedIconColor = Muted, unselectedTextColor = Muted)
+                    )
+                }
+            }
+        }
+    }) { insets ->
+    Box(Modifier.fillMaxSize().padding(insets)) {
         if (checkingSession) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -120,7 +148,7 @@ private fun SparkApp() {
             Screen.Apps -> if (user != null) ConnectedApps(onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Developer -> if (user != null) DeveloperHub(onBack = { screen = Screen.Dashboard }, onFounder = { screen = Screen.FounderConsole }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Identity -> if (user != null) Identity(user!!, busy, error, profileMessage,
-                onSave = { name ->
+                onSecurity = { screen = Screen.Security }, onDeveloper = { screen = Screen.Developer }, onSave = { name ->
                     busy = true; error = null; profileMessage = null
                     auth.updateName(name) { result ->
                         busy = false
@@ -152,6 +180,7 @@ private fun SparkApp() {
                 }, onBack = { screen = Screen.Dashboard })
                 else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
         } }
+    }
     }
 }
 
@@ -277,12 +306,6 @@ private fun Dashboard(user: SparkUser, busy: Boolean, error: String?, onIdentity
             Text(if (user.emailVerified) "✓ Email verified" else "○ Email verification pending", color = if (user.emailVerified) Color(0xFF79D7B0) else Gold)
             Text("ACCOUNT  •  ${user.id.take(12)}…", color = Muted, fontSize = 11.sp)
         }
-        Text("Explore Spark ID", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        NavigationBar(containerColor = Panel, tonalElevation = 0.dp, modifier = Modifier.fillMaxWidth()) {
-            listOf(Triple("Home", "⌂", {}), Triple("Apps", "▦", onApps), Triple("Alerts", "♧", onNotifications), Triple("Build", "◇", onDeveloper)).forEachIndexed { index, item ->
-                NavigationBarItem(selected = index == 0, onClick = item.third, icon = { Text(item.second, color = Gold, fontSize = 20.sp) }, label = { Text(item.first) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = Gold, selectedTextColor = Gold, unselectedTextColor = Muted, indicatorColor = Background))
-            }
-        }
         Text("Manage", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Action("My Spark ID  →", onIdentity)
         Action("Account security  →", onSecurity, primary = false)
@@ -298,7 +321,6 @@ private fun Dashboard(user: SparkUser, busy: Boolean, error: String?, onIdentity
 @Composable
 private fun ConnectedApps(onBack: () -> Unit) {
     Page {
-        TextButton(onClick = onBack) { Text("← Identity hub", color = Gold) }
         Text("Connected apps", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
         Text("Your future home for reviewing and managing access to Spark Stack services.", color = Muted, lineHeight = 22.sp)
         InfoCard("Spark Stack Academy", "Learning and student services • Integration planned")
@@ -329,7 +351,7 @@ private fun DeveloperHub(onBack: () -> Unit, onFounder: () -> Unit) {
 }
 
 @Composable
-private fun Identity(user: SparkUser, busy: Boolean, error: String?, message: String?, onSave: (String) -> Unit, onBack: () -> Unit) {
+private fun Identity(user: SparkUser, busy: Boolean, error: String?, message: String?, onSave: (String) -> Unit, onSecurity: () -> Unit, onDeveloper: () -> Unit, onBack: () -> Unit) {
     var editedName by remember(user.id) { mutableStateOf(user.name) }
     Page {
         TextButton(onClick = onBack) { Text("← Dashboard", color = Gold) }
@@ -350,6 +372,8 @@ private fun Identity(user: SparkUser, busy: Boolean, error: String?, message: St
             Text("Account ID: ${user.id}", color = Muted, fontSize = 12.sp)
             Text("Account profile only. This is not government ID or verified KYC.", color = Muted, fontSize = 12.sp)
         }
+        Action("Security & password  →", onSecurity, primary = false)
+        Action("Developer Hub  →", onDeveloper, primary = false)
         Text("Edit account profile", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
         SparkField(editedName, { editedName = it }, "Display name")
         if (error != null) Text(error, color = Color(0xFFFF7777), fontSize = 13.sp)
@@ -411,7 +435,6 @@ private fun Recovery(busy: Boolean, error: String?, message: String?, onSend: (S
 @Composable
 private fun NotificationsScreen(onBack: () -> Unit) {
     Page {
-        TextButton(onClick = onBack) { Text("← Identity hub", color = Gold) }
         Text("Notifications", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
         Text("Your security and developer activity, in one place.", color = Muted)
         InfoCard("No live notifications connected", "This screen is ready for an authenticated notifications service. No events, unread counts, or real-time delivery are simulated.")
