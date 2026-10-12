@@ -2,6 +2,7 @@ package com.sparkstack.sparkid
 
 import android.os.Bundle
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.platform.LocalContext
