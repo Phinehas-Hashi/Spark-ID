@@ -32,3 +32,6 @@ The dependency-free, local-only validation module and tests are under `authoriza
 
 ### Appwrite first-party JWT adapter (not deployed)
 `authorization-server/appwrite-auth.js` checks a first-party JWT against Appwrite's `/account` endpoint on the server and fails closed. Tests use a mocked network response; no live credentials or public endpoints are configured. See `authorization-server/APPWRITE-AUTH.md`.
+
+### Developer access-control policy (internal-only)
+`authorization-server/access-control.js` adds a trusted server-side approval check on every developer registry operation. A verified account must also have a matching, enabled, approved developer record. No production approval store or public self-approval route exists; see `authorization-server/ACCESS-CONTROL.md`.
