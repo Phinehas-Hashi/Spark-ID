@@ -29,3 +29,6 @@ The dependency-free, local-only validation module and tests are under `authoriza
 
 ### Authentication boundary scaffold
 `authorization-server/developer-service.js` requires an injected trusted authentication adapter before accessing registrations, and derives ownership exclusively from the verified adapter result. It has no real credential verifier or public HTTP route; see `authorization-server/AUTH-BOUNDARY.md`.
+
+### Appwrite first-party JWT adapter (not deployed)
+`authorization-server/appwrite-auth.js` checks a first-party JWT against Appwrite's `/account` endpoint on the server and fails closed. Tests use a mocked network response; no live credentials or public endpoints are configured. See `authorization-server/APPWRITE-AUTH.md`.
