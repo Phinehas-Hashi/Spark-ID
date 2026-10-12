@@ -162,7 +162,9 @@ class SparkAuth(context: Context) {
     fun register(name: String, email: String, password: String, done: (Result<SparkUser>) -> Unit) = execute(done) {
         request("POST", "", JSONObject().put("userId", UUID.randomUUID().toString())
             .put("name", name.trim()).put("email", email.trim()).put("password", password))
-        request("POST", "/sessions/email", JSONObject().put("email", email.trim()).put("password", password))
+        clearCookie()
+        request("POST", "/sessions/email", JSONObject().put("email", email.trim()).put("password", password), sendSession = false)
+        if (sessionCookie == null) throw IllegalStateException("Account created but no Appwrite session cookie was received. Please sign in.")
         parseUser(request("GET", ""))
     }
 
