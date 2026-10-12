@@ -37,7 +37,7 @@ private val Muted = Color(0xFF9AA6BD)
 private val Panel = Color(0xFF111B30)
 private val Background = Color(0xFF050816)
 
-private enum class Screen { Welcome, Login, Register, Dashboard, Identity, Security, Recovery, Apps, Developer, Notifications }
+private enum class Screen { Welcome, Login, Register, Dashboard, Identity, Security, Recovery, Apps, Developer, Notifications, FounderConsole }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -77,7 +77,7 @@ private fun SparkApp() {
     }
     BackHandler(!checkingSession && screen != Screen.Welcome) {
         screen = when (screen) {
-            Screen.Identity, Screen.Security, Screen.Apps, Screen.Developer, Screen.Notifications -> Screen.Dashboard
+            Screen.Identity, Screen.Security, Screen.Apps, Screen.Developer, Screen.Notifications, Screen.FounderConsole -> Screen.Dashboard
             Screen.Dashboard -> Screen.Dashboard
             Screen.Login, Screen.Register, Screen.Recovery -> Screen.Welcome
             Screen.Welcome -> Screen.Welcome
@@ -115,9 +115,10 @@ private fun SparkApp() {
                         .onFailure { error = it.message ?: "Could not sign out." }
                 }
             }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
+            Screen.FounderConsole -> if (user != null) FounderConsole(onBack = { screen = Screen.Developer }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Notifications -> if (user != null) NotificationsScreen(onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Apps -> if (user != null) ConnectedApps(onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
-            Screen.Developer -> if (user != null) DeveloperHub(onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
+            Screen.Developer -> if (user != null) DeveloperHub(onBack = { screen = Screen.Dashboard }, onFounder = { screen = Screen.FounderConsole }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Identity -> if (user != null) Identity(user!!, busy, error, profileMessage,
                 onSave = { name ->
                     busy = true; error = null; profileMessage = null
@@ -309,7 +310,7 @@ private fun ConnectedApps(onBack: () -> Unit) {
 }
 
 @Composable
-private fun DeveloperHub(onBack: () -> Unit) {
+private fun DeveloperHub(onBack: () -> Unit, onFounder: () -> Unit) {
     val context = LocalContext.current
     Page {
         TextButton(onClick = onBack) { Text("← Identity hub", color = Gold) }
@@ -320,6 +321,7 @@ private fun DeveloperHub(onBack: () -> Unit) {
         InfoCard("App management", "Future tools: register an app, manage redirect URIs, rotate credentials, inspect integration activity and revoke access.")
         InfoCard("Security first", "Never collect another user's Spark ID password in your own app. Never embed privileged Appwrite API keys or share Android session cookies between apps.")
         InfoCard("Current status", "Spark ID account registration, sign-in, email verification and password recovery work in the first-party Android app. Public developer authentication APIs are not live.")
+        Action("Founder / Admin console status  →", onFounder, primary = false)
         Action("Read developer integration guide  ↗", onClick = {
             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://phinehas-hashi.github.io/Spark-ID/developers.html")))
         })
@@ -414,5 +416,19 @@ private fun NotificationsScreen(onBack: () -> Unit) {
         Text("Your security and developer activity, in one place.", color = Muted)
         InfoCard("No live notifications connected", "This screen is ready for an authenticated notifications service. No events, unread counts, or real-time delivery are simulated.")
         InfoCard("Privacy by design", "Notifications must be scoped to your verified account. Founder and developer events require separate server-side authorization.")
+    }
+}
+
+@Composable
+private fun FounderConsole(onBack: () -> Unit) {
+    Page {
+        TextButton(onClick = onBack) { Text("← Developer Hub", color = Gold) }
+        Text("Founder Control Center", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+        Text("Privileged workspace · Access not yet enabled", color = Gold, fontWeight = FontWeight.Bold)
+        InfoCard("Secure access required", "The Android client cannot grant founder privileges. A trusted backend must authenticate the session, verify the administrator identity, and authorize each request.")
+        InfoCard("Developer approvals", "Pending reviews, approval and revocation actions will be loaded from the protected service. No sample records are treated as live.")
+        InfoCard("Platform intelligence", "Registered applications, verified developers and operational health will be displayed only after authenticated metrics endpoints are deployed.")
+        InfoCard("Security and audit", "Every privileged action must produce a durable audit event. Until then, write controls remain unavailable.")
+        Text("This screen is a secure integration placeholder, not an administrator login or authorization bypass.", color = Muted, fontSize = 12.sp)
     }
 }
