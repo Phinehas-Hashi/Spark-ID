@@ -130,14 +130,7 @@ private fun SparkApp() {
                         .onFailure { error = it.message ?: "Could not request recovery." }
                 }
             }, onBack = { error = null; securityMessage = null; screen = Screen.Login })
-            Screen.Dashboard -> if (user != null) Dashboard(user!!, busy, error, onIdentity = { screen = Screen.Identity }, onSecurity = { screen = Screen.Security }, onApps = { screen = Screen.Apps }, onDeveloper = { screen = Screen.Developer }, onNotifications = { screen = Screen.Notifications }, onExit = {
-                error = null; busy = true
-                auth.logout { result ->
-                    busy = false
-                    result.onSuccess { user = null; screen = Screen.Welcome }
-                        .onFailure { error = it.message ?: "Could not sign out." }
-                }
-            }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
+            Screen.Dashboard -> if (user != null) Dashboard(user!!, busy, error, onIdentity = { screen = Screen.Identity }, onSecurity = { screen = Screen.Security }, onApps = { screen = Screen.Apps }, onDeveloper = { screen = Screen.Developer }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.FounderConsole -> if (user != null) FounderConsole(onBack = { screen = Screen.Developer }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Notifications -> if (user != null) NotificationsScreen(onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Apps -> if (user != null) ConnectedApps(onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
@@ -172,7 +165,14 @@ private fun SparkApp() {
                         busy = false
                         result.onSuccess { user = it }.onFailure { error = it.message }
                     }
-                }, onBack = { screen = Screen.Dashboard })
+                }, onExit = {
+                error = null; busy = true
+                auth.logout { result ->
+                    busy = false
+                    result.onSuccess { user = null; screen = Screen.Welcome }
+                        .onFailure { error = it.message ?: "Could not sign out." }
+                }
+            }, onBack = { screen = Screen.Identity })
                 else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
         } }
     }
@@ -286,7 +286,7 @@ private fun InfoCard(title: String, detail: String) {
 }
 
 @Composable
-private fun Dashboard(user: SparkUser, busy: Boolean, error: String?, onIdentity: () -> Unit, onSecurity: () -> Unit, onApps: () -> Unit, onDeveloper: () -> Unit, onNotifications: () -> Unit, onExit: () -> Unit) {
+private fun Dashboard(user: SparkUser, busy: Boolean, error: String?, onIdentity: () -> Unit, onSecurity: () -> Unit, onApps: () -> Unit, onDeveloper: () -> Unit) {
     Page {
         Text("SPARK STACK  /  IDENTITY", color = Gold, fontSize = 12.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold)
         Text("Your identity hub", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold)
@@ -309,7 +309,6 @@ private fun Dashboard(user: SparkUser, busy: Boolean, error: String?, onIdentity
         InfoCard("Developer platform", "Explore integration architecture, developer onboarding and the upcoming secure authorization platform.")
         Action("Open Developer Hub  →", onDeveloper, primary = false)
         if (error != null) Text(error, color = Color(0xFFFF7777))
-        Action(if (busy) "Signing out…" else "Sign out", onExit, primary = false, enabled = !busy)
     }
 }
 
@@ -380,12 +379,12 @@ private fun Identity(user: SparkUser, busy: Boolean, error: String?, message: St
 }
 
 @Composable
-private fun Security(user: SparkUser, busy: Boolean, error: String?, message: String?, onPasswordChange: (String, String) -> Unit, onVerify: () -> Unit, onRefresh: () -> Unit, onBack: () -> Unit) {
+private fun Security(user: SparkUser, busy: Boolean, error: String?, message: String?, onPasswordChange: (String, String) -> Unit, onVerify: () -> Unit, onRefresh: () -> Unit, onExit: () -> Unit, onBack: () -> Unit) {
     var oldPassword by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     Page {
-        TextButton(onClick = onBack) { Text("← Dashboard", color = Gold) }
+        TextButton(onClick = onBack) { Text("← Profile", color = Gold) }
         Text("Account security", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
         Text("Your account status is read from Appwrite, not assumed from sign-in.", color = Muted)
         InfoCard("Email address", user.email)
@@ -406,6 +405,17 @@ private fun Security(user: SparkUser, busy: Boolean, error: String?, message: St
             oldPassword = ""; newPassword = ""; confirmPassword = ""
         }, enabled = !busy && oldPassword.isNotEmpty() && newPassword.length >= 8 && newPassword == confirmPassword)
         Action(if (busy) "Checking…" else "Refresh account status", onRefresh, primary = false, enabled = !busy)
+        HorizontalDivider(color = Muted.copy(alpha = .3f))
+        Text("Settings", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+        Text("Manage this device session. Signing out does not delete your Spark ID.", color = Muted, fontSize = 13.sp)
+        var confirmSignOut by remember { mutableStateOf(false) }
+        if (confirmSignOut) {
+            Text("Sign out of Spark ID on this device?", color = Color.White)
+            Action("Confirm sign out", onExit, primary = false, enabled = !busy)
+            TextButton(onClick = { confirmSignOut = false }) { Text("Cancel", color = Gold) }
+        } else {
+            Action("Sign out", { confirmSignOut = true }, primary = false, enabled = !busy)
+        }
         Text("Verification and recovery links open the Spark ID HTTPS callback page. Email verification does not constitute government identity/KYC verification.", color = Muted, fontSize = 12.sp)
     }
 }
