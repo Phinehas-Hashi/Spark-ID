@@ -31,7 +31,7 @@ private val Muted = Color(0xFF9AA6BD)
 private val Panel = Color(0xFF111B30)
 private val Background = Color(0xFF050816)
 
-private enum class Screen { Welcome, Login, Register, Dashboard, Identity }
+private enum class Screen { Welcome, Login, Register, Dashboard, Identity, Security }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -69,7 +69,7 @@ private fun SparkApp() {
     }
     BackHandler(!checkingSession && screen != Screen.Welcome) {
         screen = when (screen) {
-            Screen.Identity -> Screen.Dashboard
+            Screen.Identity, Screen.Security -> Screen.Dashboard
             Screen.Dashboard -> Screen.Dashboard
             Screen.Login, Screen.Register -> Screen.Welcome
             Screen.Welcome -> Screen.Welcome
@@ -88,7 +88,7 @@ private fun SparkApp() {
             Screen.Welcome -> Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Login -> AuthScreen(false, busy, error, onSubmit = { name, email, password -> authenticate(false, name, email, password) }, onBack = { error = null; screen = Screen.Welcome }, onSwitch = { error = null; screen = Screen.Register })
             Screen.Register -> AuthScreen(true, busy, error, onSubmit = { name, email, password -> authenticate(true, name, email, password) }, onBack = { error = null; screen = Screen.Welcome }, onSwitch = { error = null; screen = Screen.Login })
-            Screen.Dashboard -> if (user != null) Dashboard(user!!, busy, error, onIdentity = { screen = Screen.Identity }, onExit = {
+            Screen.Dashboard -> if (user != null) Dashboard(user!!, busy, error, onIdentity = { screen = Screen.Identity }, onSecurity = { screen = Screen.Security }, onExit = {
                 error = null; busy = true
                 auth.logout { result ->
                     busy = false
@@ -97,6 +97,15 @@ private fun SparkApp() {
                 }
             }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Identity -> if (user != null) Identity(user!!, onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
+            Screen.Security -> if (user != null) Security(user!!, busy, error,
+                onRefresh = {
+                    busy = true; error = null
+                    auth.refresh { result ->
+                        busy = false
+                        result.onSuccess { user = it }.onFailure { error = it.message }
+                    }
+                }, onBack = { screen = Screen.Dashboard })
+                else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
         }
     }
 }
@@ -207,14 +216,15 @@ private fun InfoCard(title: String, detail: String) {
 }
 
 @Composable
-private fun Dashboard(user: SparkUser, busy: Boolean, error: String?, onIdentity: () -> Unit, onExit: () -> Unit) {
+private fun Dashboard(user: SparkUser, busy: Boolean, error: String?, onIdentity: () -> Unit, onSecurity: () -> Unit, onExit: () -> Unit) {
     Page {
         Text("SPARK STACK INTERNATIONAL", color = Gold, fontSize = 12.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold)
         Text("Welcome, ${user.name.ifBlank { user.email }}.", color = Color.White, fontSize = 30.sp, lineHeight = 37.sp, fontWeight = FontWeight.Bold)
         Text(user.email, color = Muted)
         Spacer(Modifier.height(12.dp))
         InfoCard("✦ Spark ID", "Your connected identity card, profile and account settings.")
-        Action("View identity preview", onIdentity)
+        Action("View Spark ID profile", onIdentity)
+        Action("Account security", onSecurity, primary = false)
         InfoCard("Spark Academy", "Learn new skills and grow your career. Integration planned.")
         InfoCard("SparkSocial", "Find your people and build your network. Integration planned.")
         InfoCard("Ignite Pay", "A separate secure payments experience. Integration planned.")
@@ -245,5 +255,21 @@ private fun Identity(user: SparkUser, onBack: () -> Unit) {
             Text("Account profile only. This is not government ID or verified KYC.", color = Muted, fontSize = 12.sp)
         }
         InfoCard("Security first", "Real identity issuance, account security and connected-app permissions will be implemented with the backend.")
+    }
+}
+
+@Composable
+private fun Security(user: SparkUser, busy: Boolean, error: String?, onRefresh: () -> Unit, onBack: () -> Unit) {
+    Page {
+        TextButton(onClick = onBack) { Text("← Dashboard", color = Gold) }
+        Text("Account security", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+        Text("Your account status is read from Appwrite, not assumed from sign-in.", color = Muted)
+        InfoCard("Email address", user.email)
+        InfoCard("Email verification", if (user.emailVerified) "Verified" else "Not verified")
+        InfoCard("Session", "Your current session is encrypted on this device and checked against Appwrite at startup.")
+        if (error != null) Text(error, color = Color(0xFFFF7777))
+        if (busy) CircularProgressIndicator(color = Gold)
+        Action(if (busy) "Checking…" else "Refresh account status", onRefresh, enabled = !busy)
+        Text("Email verification and password recovery links will be enabled with a registered app callback URL. This screen does not claim identity/KYC verification.", color = Muted, fontSize = 12.sp)
     }
 }

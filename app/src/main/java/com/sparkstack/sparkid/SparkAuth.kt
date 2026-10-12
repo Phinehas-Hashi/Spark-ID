@@ -16,7 +16,7 @@ import java.net.URL
 import java.util.UUID
 import java.util.concurrent.Executors
 
-data class SparkUser(val id: String, val name: String, val email: String)
+data class SparkUser(val id: String, val name: String, val email: String, val emailVerified: Boolean)
 
 /** Public Appwrite Account REST API. Session is held in memory, not backed up or logged. */
 class SparkAuth(context: Context) {
@@ -97,7 +97,7 @@ class SparkAuth(context: Context) {
     }
 
     private fun parseUser(json: JSONObject) = SparkUser(
-        json.getString("\$id"), json.optString("name"), json.getString("email")
+        json.getString("\$id"), json.optString("name"), json.getString("email"), json.optBoolean("emailVerification", false)
     )
 
     fun restore(done: (Result<SparkUser?>) -> Unit) = execute(done) {
@@ -108,6 +108,10 @@ class SparkAuth(context: Context) {
                 if (e is SessionExpiredException) { clearCookie(); null } else throw e
             }
         }
+    }
+
+    fun refresh(done: (Result<SparkUser>) -> Unit) = execute(done) {
+        parseUser(request("GET", ""))
     }
 
     fun login(email: String, password: String, done: (Result<SparkUser>) -> Unit) = execute(done) {
