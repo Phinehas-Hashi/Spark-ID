@@ -37,7 +37,7 @@ private val Muted = Color(0xFF9AA6BD)
 private val Panel = Color(0xFF111B30)
 private val Background = Color(0xFF050816)
 
-private enum class Screen { Welcome, Login, Register, Dashboard, Identity, Security, Recovery, Apps, Developer }
+private enum class Screen { Welcome, Login, Register, Dashboard, Identity, Security, Recovery, Apps, Developer, Notifications }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -77,7 +77,7 @@ private fun SparkApp() {
     }
     BackHandler(!checkingSession && screen != Screen.Welcome) {
         screen = when (screen) {
-            Screen.Identity, Screen.Security, Screen.Apps, Screen.Developer -> Screen.Dashboard
+            Screen.Identity, Screen.Security, Screen.Apps, Screen.Developer, Screen.Notifications -> Screen.Dashboard
             Screen.Dashboard -> Screen.Dashboard
             Screen.Login, Screen.Register, Screen.Recovery -> Screen.Welcome
             Screen.Welcome -> Screen.Welcome
@@ -107,7 +107,7 @@ private fun SparkApp() {
                         .onFailure { error = it.message ?: "Could not request recovery." }
                 }
             }, onBack = { error = null; securityMessage = null; screen = Screen.Login })
-            Screen.Dashboard -> if (user != null) Dashboard(user!!, busy, error, onIdentity = { screen = Screen.Identity }, onSecurity = { screen = Screen.Security }, onApps = { screen = Screen.Apps }, onDeveloper = { screen = Screen.Developer }, onExit = {
+            Screen.Dashboard -> if (user != null) Dashboard(user!!, busy, error, onIdentity = { screen = Screen.Identity }, onSecurity = { screen = Screen.Security }, onApps = { screen = Screen.Apps }, onDeveloper = { screen = Screen.Developer }, onNotifications = { screen = Screen.Notifications }, onExit = {
                 error = null; busy = true
                 auth.logout { result ->
                     busy = false
@@ -115,6 +115,7 @@ private fun SparkApp() {
                         .onFailure { error = it.message ?: "Could not sign out." }
                 }
             }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
+            Screen.Notifications -> if (user != null) NotificationsScreen(onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Apps -> if (user != null) ConnectedApps(onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Developer -> if (user != null) DeveloperHub(onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Identity -> if (user != null) Identity(user!!, busy, error, profileMessage,
@@ -260,7 +261,7 @@ private fun InfoCard(title: String, detail: String) {
 }
 
 @Composable
-private fun Dashboard(user: SparkUser, busy: Boolean, error: String?, onIdentity: () -> Unit, onSecurity: () -> Unit, onApps: () -> Unit, onDeveloper: () -> Unit, onExit: () -> Unit) {
+private fun Dashboard(user: SparkUser, busy: Boolean, error: String?, onIdentity: () -> Unit, onSecurity: () -> Unit, onApps: () -> Unit, onDeveloper: () -> Unit, onNotifications: () -> Unit, onExit: () -> Unit) {
     Page {
         Text("SPARK STACK  /  IDENTITY", color = Gold, fontSize = 12.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold)
         Text("Your identity hub", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold)
@@ -274,6 +275,12 @@ private fun Dashboard(user: SparkUser, busy: Boolean, error: String?, onIdentity
             HorizontalDivider(color = Muted.copy(alpha = .25f))
             Text(if (user.emailVerified) "✓ Email verified" else "○ Email verification pending", color = if (user.emailVerified) Color(0xFF79D7B0) else Gold)
             Text("ACCOUNT  •  ${user.id.take(12)}…", color = Muted, fontSize = 11.sp)
+        }
+        Text("Explore Spark ID", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        NavigationBar(containerColor = Panel, tonalElevation = 0.dp, modifier = Modifier.fillMaxWidth()) {
+            listOf(Triple("Home", "⌂", {}), Triple("Apps", "▦", onApps), Triple("Alerts", "♧", onNotifications), Triple("Build", "◇", onDeveloper)).forEachIndexed { index, item ->
+                NavigationBarItem(selected = index == 0, onClick = item.third, icon = { Text(item.second, color = Gold, fontSize = 20.sp) }, label = { Text(item.first) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = Gold, selectedTextColor = Gold, unselectedTextColor = Muted, indicatorColor = Background))
+            }
         }
         Text("Manage", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Action("My Spark ID  →", onIdentity)
@@ -396,5 +403,16 @@ private fun Recovery(busy: Boolean, error: String?, message: String?, onSend: (S
         if (busy) CircularProgressIndicator(color = Gold)
         Action("Send recovery email", { onSend(email.trim()) }, enabled = !busy && email.trim().contains("@"))
         Text("Never share recovery links or codes. After resetting your password, return here to sign in.", color = Muted, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun NotificationsScreen(onBack: () -> Unit) {
+    Page {
+        TextButton(onClick = onBack) { Text("← Identity hub", color = Gold) }
+        Text("Notifications", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+        Text("Your security and developer activity, in one place.", color = Muted)
+        InfoCard("No live notifications connected", "This screen is ready for an authenticated notifications service. No events, unread counts, or real-time delivery are simulated.")
+        InfoCard("Privacy by design", "Notifications must be scoped to your verified account. Founder and developer events require separate server-side authorization.")
     }
 }
