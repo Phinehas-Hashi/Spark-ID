@@ -1,6 +1,7 @@
 package com.sparkstack.sparkid
 
 import android.os.Bundle
+import androidx.compose.ui.platform.LocalContext
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -42,21 +43,45 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun SparkApp() {
+    val context = LocalContext.current
+    val auth = remember { SparkAuth(context.applicationContext) }
     var screen by remember { mutableStateOf(Screen.Welcome) }
+    var user by remember { mutableStateOf<SparkUser?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    fun authenticate(register: Boolean, name: String, email: String, password: String) {
+        error = null
+        busy = true
+        val callback: (Result<SparkUser>) -> Unit = { result ->
+            busy = false
+            result.onSuccess { user = it; screen = Screen.Dashboard }
+                .onFailure { error = it.message ?: "Authentication failed. Please retry." }
+        }
+        if (register) auth.register(name, email, password, callback)
+        else auth.login(email, password, callback)
+    }
     BackHandler(screen != Screen.Welcome) {
         screen = when (screen) {
             Screen.Identity -> Screen.Dashboard
-            Screen.Dashboard, Screen.Login, Screen.Register -> Screen.Welcome
+            Screen.Dashboard -> Screen.Dashboard
+            Screen.Login, Screen.Register -> Screen.Welcome
             Screen.Welcome -> Screen.Welcome
         }
     }
     Surface(color = Background, modifier = Modifier.fillMaxSize()) {
         when (screen) {
             Screen.Welcome -> Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
-            Screen.Login -> AuthScreen(false, onBack = { screen = Screen.Welcome }, onSwitch = { screen = Screen.Register })
-            Screen.Register -> AuthScreen(true, onBack = { screen = Screen.Welcome }, onSwitch = { screen = Screen.Login })
-            Screen.Dashboard -> Dashboard(onIdentity = { screen = Screen.Identity }, onExit = { screen = Screen.Welcome })
-            Screen.Identity -> Identity(onBack = { screen = Screen.Dashboard })
+            Screen.Login -> AuthScreen(false, busy, error, onSubmit = { name, email, password -> authenticate(false, name, email, password) }, onBack = { error = null; screen = Screen.Welcome }, onSwitch = { error = null; screen = Screen.Register })
+            Screen.Register -> AuthScreen(true, busy, error, onSubmit = { name, email, password -> authenticate(true, name, email, password) }, onBack = { error = null; screen = Screen.Welcome }, onSwitch = { error = null; screen = Screen.Login })
+            Screen.Dashboard -> if (user != null) Dashboard(user!!, busy, error, onIdentity = { screen = Screen.Identity }, onExit = {
+                error = null; busy = true
+                auth.logout { result ->
+                    busy = false
+                    result.onSuccess { user = null; screen = Screen.Welcome }
+                        .onFailure { error = it.message ?: "Could not sign out." }
+                }
+            }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
+            Screen.Identity -> if (user != null) Identity(user!!, onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
         }
     }
 }
@@ -110,12 +135,12 @@ private fun Welcome(onLogin: () -> Unit, onRegister: () -> Unit) {
         Spacer(Modifier.height(20.dp))
         Action("Create Spark ID", onRegister)
         Action("I already have an account", onLogin, primary = false)
-        Text("UI preview • Accounts are not active yet", color = Muted, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, fontSize = 12.sp)
+        Text("Accounts powered by Appwrite", color = Muted, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, fontSize = 12.sp)
     }
 }
 
 @Composable
-private fun AuthScreen(register: Boolean, onBack: () -> Unit, onSwitch: () -> Unit) {
+private fun AuthScreen(register: Boolean, busy: Boolean, error: String?, onSubmit: (String, String, String) -> Unit, onBack: () -> Unit, onSwitch: () -> Unit) {
     var name by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -129,8 +154,11 @@ private fun AuthScreen(register: Boolean, onBack: () -> Unit, onSwitch: () -> Un
         }
         SparkField(email, { email = it }, "Email address", KeyboardType.Email)
         SparkField(password, { password = it }, "Password", password = true)
-        Action(if (register) "Create account (coming soon)" else "Sign in (coming soon)", {}, enabled = false)
-        Text("Authentication will be enabled after secure Appwrite configuration. No credentials are submitted or stored in this preview.", color = Muted, fontSize = 12.sp, lineHeight = 18.sp)
+        if (error != null) Text(error, color = Color(0xFFFF7777), fontSize = 13.sp)
+        if (busy) CircularProgressIndicator(color = Gold)
+        Action(if (register) "Create account" else "Sign in", { onSubmit(name, email, password) },
+            enabled = !busy && email.contains("@") && password.length >= 8 && (!register || name.isNotBlank()))
+        Text("Password must be at least 8 characters.", color = Muted, fontSize = 12.sp)
         TextButton(onClick = onSwitch) {
             Text(if (register) "Already registered? Sign in" else "New here? Create Spark ID", color = Gold)
         }
@@ -164,23 +192,24 @@ private fun InfoCard(title: String, detail: String) {
 }
 
 @Composable
-private fun Dashboard(onIdentity: () -> Unit, onExit: () -> Unit) {
+private fun Dashboard(user: SparkUser, busy: Boolean, error: String?, onIdentity: () -> Unit, onExit: () -> Unit) {
     Page {
         Text("SPARK STACK INTERNATIONAL", color = Gold, fontSize = 12.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold)
-        Text("Your universe starts here.", color = Color.White, fontSize = 30.sp, lineHeight = 37.sp, fontWeight = FontWeight.Bold)
-        Text("Experience preview — not a signed-in account.", color = Muted)
+        Text("Welcome, ${user.name.ifBlank { user.email }}.", color = Color.White, fontSize = 30.sp, lineHeight = 37.sp, fontWeight = FontWeight.Bold)
+        Text(user.email, color = Muted)
         Spacer(Modifier.height(12.dp))
         InfoCard("✦ Spark ID", "Your connected identity card, profile and account settings.")
         Action("View identity preview", onIdentity)
         InfoCard("Spark Academy", "Learn new skills and grow your career. Integration planned.")
         InfoCard("SparkSocial", "Find your people and build your network. Integration planned.")
         InfoCard("Ignite Pay", "A separate secure payments experience. Integration planned.")
-        Action("Return to welcome", onExit, primary = false)
+        if (error != null) Text(error, color = Color(0xFFFF7777))
+        Action(if (busy) "Signing out…" else "Sign out", onExit, primary = false, enabled = !busy)
     }
 }
 
 @Composable
-private fun Identity(onBack: () -> Unit) {
+private fun Identity(user: SparkUser, onBack: () -> Unit) {
     Page {
         TextButton(onClick = onBack) { Text("← Dashboard", color = Gold) }
         Spacer(Modifier.height(18.dp))
@@ -193,12 +222,12 @@ private fun Identity(onBack: () -> Unit) {
             ).border(1.dp, Blue, RoundedCornerShape(24.dp)).padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text("DIGITAL IDENTITY • PREVIEW", color = Gold, fontSize = 12.sp, letterSpacing = 1.sp)
-            Text("Your name", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-            Text("Spark ID not issued", color = Muted)
+            Text("SPARK ACCOUNT • PROFILE", color = Gold, fontSize = 12.sp, letterSpacing = 1.sp)
+            Text(user.name.ifBlank { "Spark member" }, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+            Text(user.email, color = Muted)
             HorizontalDivider(color = Muted.copy(alpha = 0.3f))
-            Text("Verification: Not started", color = Muted)
-            Text("This is a visual sample, not proof of identity or account ownership.", color = Muted, fontSize = 12.sp)
+            Text("Account ID: ${user.id}", color = Muted, fontSize = 12.sp)
+            Text("Account profile only. This is not government ID or verified KYC.", color = Muted, fontSize = 12.sp)
         }
         InfoCard("Security first", "Real identity issuance, account security and connected-app permissions will be implemented with the backend.")
     }
