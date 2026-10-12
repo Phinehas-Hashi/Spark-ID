@@ -83,7 +83,7 @@ class SparkAuth(context: Context) {
             if (status !in 200..299) throw IllegalStateException(
                 when (status) {
                     401 -> when { 
-                        path.isEmpty() && method == "GET" -> throw SessionExpiredException()
+                        path.isEmpty() && method == "GET" -> "Account profile rejected session (HTTP 401; type: ${json.optString("type", "unknown")})."
                         path == "/sessions/email" && method == "POST" -> "Email or password was not accepted. Check your details or reset your password."
                         else -> "Authentication required. Please sign in again."
                     }
@@ -160,7 +160,8 @@ class SparkAuth(context: Context) {
         clearCookie()
         request("POST", "/sessions/email", JSONObject().put("email", email.trim()).put("password", password), sendSession = false)
         if (sessionCookie == null) throw IllegalStateException("Sign-in succeeded but no Appwrite session cookie was received. Please retry.")
-        parseUser(request("GET", ""))
+        try { parseUser(request("GET", "")) }
+        catch (e: Exception) { throw IllegalStateException("After successful sign-in: ${e.message ?: "Account lookup failed."}") }
     }
 
     fun register(name: String, email: String, password: String, done: (Result<SparkUser>) -> Unit) = execute(done) {
