@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer"><meta http-equiv="Referrer-Policy" content="no-referrer">
+<title>Spark ID • Account link</title>
+<style>body{margin:0;background:#050816;color:#fff;font:16px system-ui;display:grid;min-height:100vh;place-items:center}main{box-sizing:border-box;width:min(440px,94vw);background:#111b30;border-radius:24px;padding:28px}h1{color:#ffb703}p{color:#b8c3d7;line-height:1.5}input,button{box-sizing:border-box;width:100%;padding:15px;border-radius:12px;margin:7px 0;font:inherit}input{background:#050816;border:1px solid #9aa6bd;color:white}button{background:#ffb703;border:0;font-weight:700;cursor:pointer}button:disabled{opacity:.5}#status{white-space:pre-wrap}</style></head>
+<body><main><h1>✦ Spark ID</h1><h2 id="title">Account link</h2><p id="intro">Checking your secure link…</p>
+<form id="reset" hidden><label for="password">New password</label><input id="password" type="password" minlength="8" autocomplete="new-password" required>
+<label for="confirm">Confirm new password</label><input id="confirm" type="password" minlength="8" autocomplete="new-password" required><button id="submit">Update password</button></form>
+<p id="status" role="status" aria-live="polite"></p></main>
+<script>
+"use strict";
+const endpoint="https://fra.cloud.appwrite.io/v1", project="6accc223002dbb161c74";
+const params=new URLSearchParams(location.search), userId=params.get("userId"), secret=params.get("secret"), mode=params.get("mode");
+history.replaceState(null,"",location.pathname);
+const title=document.getElementById("title"),intro=document.getElementById("intro"),status=document.getElementById("status"),form=document.getElementById("reset");
+async function send(path,body){
+ const res=await fetch(endpoint+"/account/"+path,{method:"POST",headers:{"Content-Type":"application/json","X-Appwrite-Project":project},body:JSON.stringify(body),credentials:"omit",referrerPolicy:"no-referrer"});
+ const data=await res.json().catch(()=>({}));
+ if(!res.ok)throw Error(data.message||"This link could not be completed. It may have expired.");
+ return data;
+}
+if(!userId||!secret||!["verify","recover"].includes(mode)){title.textContent="Invalid account link";intro.textContent="Request a new link from Spark ID.";}
+else if(mode==="verify"){
+ title.textContent="Verify email";intro.textContent="Confirming your email address…";
+ send("verification",{userId,secret}).then(()=>{intro.textContent="Your email has been verified. Return to Spark ID and refresh Account Security.";}).catch(e=>{intro.textContent="Verification failed.";status.textContent=e.message;});
+}else{
+ title.textContent="Reset password";intro.textContent="Choose a new password for your Spark ID.";form.hidden=false;
+ form.addEventListener("submit",async e=>{
+ e.preventDefault();const password=document.getElementById("password").value,confirm=document.getElementById("confirm").value;
+ if(password!==confirm){status.textContent="Passwords do not match.";return;}
+ const button=document.getElementById("submit");button.disabled=true;status.textContent="Updating password…";
+ try{await send("recovery",{userId,secret,password});form.hidden=true;intro.textContent="Password updated. Return to Spark ID and sign in.";status.textContent="";}
+ catch(err){status.textContent=err.message;button.disabled=false;}
+ });
+}
+</script></body></html>
