@@ -26,3 +26,6 @@ The dependency-free, local-only validation module and tests are under `authoriza
 
 ### Local developer registry prototype
 `authorization-server/registry.js` provides local pending-review app records with random public client IDs and owner-filtered reads; it is **not an authenticated endpoint**. See `authorization-server/REGISTRY.md`. Run `npm.cmd test` in that directory to execute both validation and registry tests.
+
+### Authentication boundary scaffold
+`authorization-server/developer-service.js` requires an injected trusted authentication adapter before accessing registrations, and derives ownership exclusively from the verified adapter result. It has no real credential verifier or public HTTP route; see `authorization-server/AUTH-BOUNDARY.md`.
