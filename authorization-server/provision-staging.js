@@ -30,11 +30,22 @@ async function main() {
   const client = new Client().setEndpoint(env.APPWRITE_ENDPOINT)
     .setProject(STAGING).setKey(env.APPWRITE_PROVISIONING_KEY);
   const db = new TablesDB(client);
-  const databaseId = "spark_id";
-  // Create-only: a 409 stops execution, preventing accidental schema modification.
-  stage = "create database";
-  await db.create({ databaseId, name: "Spark ID", enabled: true });
-  process.stdout.write("Created staging database.\n");
+  const databaseId = "productions";
+  // Reuse only the explicitly designated staging database; do not alter its settings.
+  stage = "inspect staging database";
+  let existingDatabase = null;
+  try { existingDatabase = await db.get({ databaseId }); }
+  catch (error) {
+    if (error?.code !== 404) throw error;
+  }
+  if (existingDatabase) {
+    if (existingDatabase.$id !== databaseId) throw new Error("Unexpected database identity");
+    process.stdout.write("Using existing staging database: productions.\\n");
+  } else {
+    stage = "create staging database";
+    await db.create({ databaseId, name: "Spark ID Staging", enabled: true });
+    process.stdout.write("Created staging database: productions.\\n");
+  }
   const tables = [
     { tableId: "developer_approvals", name: "Developer Approvals", columns: [
       ["subject", "string", 128], ["status", "enum", ["pending", "approved", "revoked"]],
