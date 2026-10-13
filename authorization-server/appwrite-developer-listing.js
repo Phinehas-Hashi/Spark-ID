@@ -17,7 +17,7 @@ function createAppwriteDeveloperListing({ auth, approvals, applications, authOpt
         !/^[A-Za-z0-9_-]{3,128}$/.test(principal.subject)) throw Object.assign(new Error("Developer access denied"), { code: "DEVELOPER_ACCESS_DENIED" });
     const approval = await authority.get(principal.subject);
     if (!approval || approval.subject !== principal.subject || approval.status !== "approved" || approval.enabled !== true)
-      throw new Error("Developer access denied");
+      throw Object.assign(new Error("Developer access denied"), { code: "DEVELOPER_ACCESS_DENIED" });
     const rows = await applications.listByOwner(principal.subject);
     if (!Array.isArray(rows) || rows.some(row => !row || row.ownerSubject !== principal.subject))
       throw new Error("Invalid application store response");
