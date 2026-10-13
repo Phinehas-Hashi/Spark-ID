@@ -60,9 +60,11 @@ class SparkAuth(context: Context) {
     private val main = Handler(Looper.getMainLooper())
     private var sessionCookie: String? = null
 
+    class MfaRequiredException : IllegalStateException("Additional verification required.")
+
     private class SessionExpiredException : IllegalStateException("Session expired. Please sign in again.")
 
-    private fun request(method: String, path: String, body: JSONObject? = null): JSONObject {
+    private fun request(method: String, path: String, body: JSONObject? = null, sendSession: Boolean = true): JSONObject {
         val connection = URL(endpoint + "/account" + path).openConnection() as HttpURLConnection
         try {
             connection.requestMethod = method
@@ -70,7 +72,7 @@ class SparkAuth(context: Context) {
             connection.readTimeout = 15000
             connection.setRequestProperty("X-Appwrite-Project", projectId)
             connection.setRequestProperty("Accept", "application/json")
-            sessionCookie?.let { connection.setRequestProperty("Cookie", it) }
+            if (sendSession) sessionCookie?.let { connection.setRequestProperty("Cookie", it) }
             if (body != null) {
                 connection.doOutput = true
                 connection.setRequestProperty("Content-Type", "application/json")
@@ -82,16 +84,34 @@ class SparkAuth(context: Context) {
             val json = runCatching { JSONObject(raw) }.getOrElse { JSONObject() }
             if (status !in 200..299) throw IllegalStateException(
                 when (status) {
-                    401 -> if (path.isEmpty() && method == "GET") throw SessionExpiredException() else "Incorrect credentials or expired session."
+                    401 -> when { 
+                        path.isEmpty() && method == "GET" && json.optString("type") == "user_more_factors_required" -> throw MfaRequiredException()
+                        path.isEmpty() && method == "GET" -> throw SessionExpiredException()
+                        path == "/sessions/email" && method == "POST" -> "Email or password was not accepted. Check your details or reset your password."
+                        else -> "Authentication required. Please sign in again."
+                    }
                     409 -> "An account with this email already exists."
                     429 -> "Too many attempts. Please try again later."
                     else -> json.optString("message").ifBlank { "Request failed ($status)." }
                 }
             )
-            connection.headerFields.entries
-                .firstOrNull { it.key?.equals("Set-Cookie", ignoreCase = true) == true }
-                ?.value?.firstOrNull { it.startsWith("a_session_", ignoreCase = true) && !it.startsWith("a_session_${projectId}_legacy", ignoreCase = true) }
-                ?.let { sessionCookie = it.substringBefore(';'); saveCookie(sessionCookie!!) }
+            // Appwrite REST may return both modern and legacy project session cookies.
+            // Forward both as a Cookie header, not just the first Set-Cookie value.
+            val cookieName = "a_session_${projectId}"
+            val freshCookies = connection.headerFields.entries
+                .filter { it.key?.equals("Set-Cookie", ignoreCase = true) == true }
+                .flatMap { it.value.orEmpty() }
+                .map { it.substringBefore(';').trim() }
+                .filter { cookie ->
+                    val name = cookie.substringBefore('=')
+                    val value = cookie.substringAfter('=', "")
+                    (name == cookieName || name == "${cookieName}_legacy") &&
+                        value.isNotBlank() && value.lowercase() != "deleted"
+                }
+            if (freshCookies.isNotEmpty()) {
+                sessionCookie = freshCookies.joinToString("; ")
+                saveCookie(sessionCookie!!)
+            }
             return json
         } finally { connection.disconnect() }
     }
@@ -140,15 +160,51 @@ class SparkAuth(context: Context) {
     }
 
     fun login(email: String, password: String, done: (Result<SparkUser>) -> Unit) = execute(done) {
-        request("POST", "/sessions/email", JSONObject().put("email", email.trim()).put("password", password))
-        parseUser(request("GET", ""))
+        clearCookie()
+        request("POST", "/sessions/email", JSONObject().put("email", email.trim()).put("password", password), sendSession = false)
+        if (sessionCookie == null) throw IllegalStateException("Sign-in succeeded but no Appwrite session cookie was received. Please retry.")
+        try { parseUser(request("GET", "")) }
+        catch (e: MfaRequiredException) { throw e }
+        catch (e: Exception) { throw IllegalStateException("After successful sign-in: ${e.message ?: "Account lookup failed."}") }
     }
 
     fun register(name: String, email: String, password: String, done: (Result<SparkUser>) -> Unit) = execute(done) {
         request("POST", "", JSONObject().put("userId", UUID.randomUUID().toString())
             .put("name", name.trim()).put("email", email.trim()).put("password", password))
-        request("POST", "/sessions/email", JSONObject().put("email", email.trim()).put("password", password))
+        clearCookie()
+        request("POST", "/sessions/email", JSONObject().put("email", email.trim()).put("password", password), sendSession = false)
+        if (sessionCookie == null) throw IllegalStateException("Account created but no Appwrite session cookie was received. Please sign in.")
         parseUser(request("GET", ""))
+    }
+
+    fun startEmailChallenge(done: (Result<String>) -> Unit) = execute(done) {
+        val factors = request("GET", "/mfa/factors")
+        check(factors.optBoolean("email")) {
+            "Email verification unavailable for this account. Available factors: " +
+                listOf("email", "phone", "recoveryCode").filter { factors.optBoolean(it) }
+                    .joinToString(", ").ifBlank { "none reported" } +
+                ". Confirm you are signing in to the intended account."
+        }
+        request("POST", "/mfa/challenge", JSONObject().put("factor", "email")).getString("\$id")
+    }
+
+    fun completeEmailChallenge(challengeId: String, code: String, done: (Result<SparkUser>) -> Unit) = execute(done) {
+        require(code.matches(Regex("[0-9]{6}"))) { "Enter the six-digit code sent to your email." }
+        request("PUT", "/mfa/challenge", JSONObject().put("challengeId", challengeId).put("otp", code))
+        parseUser(request("GET", ""))
+    }
+
+    /**
+     * Mint a short-lived first-party JWT only after the completed Appwrite session
+     * can access /account. Never persist, log, or send this JWT to third-party apps.
+     * The callback must deliver it only to a trusted first-party API transport.
+     */
+    fun createFirstPartyJwt(done: (Result<String>) -> Unit) = execute(done) {
+        check(sessionCookie != null) { "Sign in before accessing developer services." }
+        parseUser(request("GET", "")) // Appwrite enforces completed MFA here.
+        val jwt = request("POST", "/jwts").getString("jwt")
+        check(jwt.isNotBlank()) { "Appwrite did not issue an authentication token." }
+        jwt
     }
 
     fun logout(done: (Result<Unit>) -> Unit) = execute(done) {

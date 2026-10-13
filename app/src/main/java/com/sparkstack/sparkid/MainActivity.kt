@@ -37,7 +37,7 @@ private val Muted = Color(0xFF9AA6BD)
 private val Panel = Color(0xFF111B30)
 private val Background = Color(0xFF050816)
 
-private enum class Screen { Welcome, Login, Register, Dashboard, Identity, Security, Recovery, Apps, Developer }
+private enum class Screen { Welcome, Login, Register, Mfa, Dashboard, Identity, Security, Recovery, Apps, Developer, Notifications, FounderConsole }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,13 +51,20 @@ class MainActivity : ComponentActivity() {
 private fun SparkApp() {
     val context = LocalContext.current
     val auth = remember { SparkAuth(context.applicationContext) }
+    val developerApi = remember { DeveloperApi() }
     var screen by remember { mutableStateOf(Screen.Welcome) }
     var checkingSession by remember { mutableStateOf(true) }
     var user by remember { mutableStateOf<SparkUser?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var mfaChallengeId by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var securityMessage by remember { mutableStateOf<String?>(null) }
     var profileMessage by remember { mutableStateOf<String?>(null) }
+    var developerLoading by remember { mutableStateOf(false) }
+    var developerError by remember { mutableStateOf<String?>(null) }
+    var developerApps by remember { mutableStateOf<List<DeveloperApplication>?>(null) }
+    val developerWorker = remember { java.util.concurrent.Executors.newSingleThreadExecutor() }
+    val developerMain = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
     LaunchedEffect(Unit) {
         auth.restore { result ->
             result.onSuccess { restored -> if (restored != null) { user = restored; screen = Screen.Dashboard } }
@@ -70,20 +77,52 @@ private fun SparkApp() {
         val callback: (Result<SparkUser>) -> Unit = { result ->
             busy = false
             result.onSuccess { user = it; screen = Screen.Dashboard }
-                .onFailure { error = it.message ?: "Authentication failed. Please retry." }
+                .onFailure { failure ->
+                    if (failure is SparkAuth.MfaRequiredException) {
+                        busy = true
+                        auth.startEmailChallenge { challenge ->
+                            busy = false
+                            challenge.onSuccess { mfaChallengeId = it; error = null; screen = Screen.Mfa }
+                                .onFailure { error = it.message ?: "Could not send email verification code." }
+                        }
+                    } else error = failure.message ?: "Authentication failed. Please retry."
+                }
         }
         if (register) auth.register(name, email, password, callback)
         else auth.login(email, password, callback)
     }
     BackHandler(!checkingSession && screen != Screen.Welcome) {
         screen = when (screen) {
-            Screen.Identity, Screen.Security, Screen.Apps, Screen.Developer -> Screen.Dashboard
+            Screen.Identity, Screen.Apps, Screen.Notifications -> Screen.Dashboard
+            Screen.Security -> Screen.Identity
+            Screen.FounderConsole -> Screen.Developer
+            Screen.Developer -> Screen.Dashboard
             Screen.Dashboard -> Screen.Dashboard
-            Screen.Login, Screen.Register, Screen.Recovery -> Screen.Welcome
+            Screen.Login, Screen.Register, Screen.Recovery, Screen.Mfa -> Screen.Welcome
             Screen.Welcome -> Screen.Welcome
         }
     }
-    Surface(color = Background, modifier = Modifier.fillMaxSize()) {
+    val tabs = setOf(Screen.Dashboard, Screen.Apps, Screen.Notifications, Screen.Identity)
+    Scaffold(containerColor = Background, bottomBar = {
+        if (!checkingSession && user != null && screen in tabs) {
+            NavigationBar(containerColor = Panel) {
+                listOf(
+                    Triple(Screen.Dashboard, "Home", "⌂"),
+                    Triple(Screen.Apps, "Apps", "▦"),
+                    Triple(Screen.Notifications, "Alerts", "♧"),
+                    Triple(Screen.Identity, "Profile", "◉")
+                ).forEach { (destination, label, symbol) ->
+                    NavigationBarItem(
+                        selected = screen == destination, onClick = { screen = destination },
+                        icon = { Text(symbol, fontSize = 22.sp) }, label = { Text(label) },
+                        alwaysShowLabel = true,
+                        colors = NavigationBarItemDefaults.colors(selectedIconColor = Background, selectedTextColor = Gold, indicatorColor = Gold, unselectedIconColor = Muted, unselectedTextColor = Muted)
+                    )
+                }
+            }
+        }
+    }) { insets ->
+    Box(Modifier.fillMaxSize().padding(insets)) {
         if (checkingSession) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -99,6 +138,18 @@ private fun SparkApp() {
             Screen.Welcome -> Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Login -> AuthScreen(false, busy, error, onSubmit = { name, email, password -> authenticate(false, name, email, password) }, onBack = { error = null; screen = Screen.Welcome }, onSwitch = { error = null; screen = Screen.Register }, onForgot = { error = null; securityMessage = null; screen = Screen.Recovery })
             Screen.Register -> AuthScreen(true, busy, error, onSubmit = { name, email, password -> authenticate(true, name, email, password) }, onBack = { error = null; screen = Screen.Welcome }, onSwitch = { error = null; screen = Screen.Login })
+            Screen.Mfa -> MfaScreen(busy, error, onSubmit = { code ->
+                val id = mfaChallengeId
+                if (id == null) error = "Verification challenge missing. Please sign in again."
+                else {
+                    busy = true; error = null
+                    auth.completeEmailChallenge(id, code) { result ->
+                        busy = false
+                        result.onSuccess { user = it; mfaChallengeId = null; screen = Screen.Dashboard }
+                            .onFailure { error = it.message ?: "Verification failed. Try a fresh code." }
+                    }
+                }
+            }, onBack = { mfaChallengeId = null; error = null; screen = Screen.Login })
             Screen.Recovery -> Recovery(busy, error, securityMessage, onSend = { email ->
                 busy = true; error = null; securityMessage = null
                 auth.sendRecovery(email) { result ->
@@ -107,18 +158,36 @@ private fun SparkApp() {
                         .onFailure { error = it.message ?: "Could not request recovery." }
                 }
             }, onBack = { error = null; securityMessage = null; screen = Screen.Login })
-            Screen.Dashboard -> if (user != null) Dashboard(user!!, busy, error, onIdentity = { screen = Screen.Identity }, onSecurity = { screen = Screen.Security }, onApps = { screen = Screen.Apps }, onDeveloper = { screen = Screen.Developer }, onExit = {
-                error = null; busy = true
-                auth.logout { result ->
-                    busy = false
-                    result.onSuccess { user = null; screen = Screen.Welcome }
-                        .onFailure { error = it.message ?: "Could not sign out." }
-                }
-            }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
+            Screen.Dashboard -> if (user != null) Dashboard(user!!, busy, error, onIdentity = { screen = Screen.Identity }, onSecurity = { screen = Screen.Security }, onApps = { screen = Screen.Apps }, onDeveloper = { screen = Screen.Developer }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
+            Screen.FounderConsole -> if (user != null) FounderConsole(onBack = { screen = Screen.Developer }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
+            Screen.Notifications -> if (user != null) NotificationsScreen(onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Apps -> if (user != null) ConnectedApps(onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
-            Screen.Developer -> if (user != null) DeveloperHub(onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
+            Screen.Developer -> if (user != null) DeveloperHub(
+                apiConfigured = developerApi.configured,
+                loading = developerLoading, error = developerError, applications = developerApps,
+                onRefresh = {
+                    if (developerApi.configured && !developerLoading) {
+                        developerLoading = true; developerError = null; developerApps = null
+                        auth.createFirstPartyJwt { jwtResult ->
+                            jwtResult.onSuccess { jwt ->
+                                developerWorker.execute {
+                                    val result = runCatching { developerApi.listOwnApplications(jwt) }
+                                    developerMain.post {
+                                        developerLoading = false
+                                        result.onSuccess { developerApps = it }
+                                            .onFailure { developerError = it.message ?: "Could not load developer applications." }
+                                    }
+                                }
+                            }.onFailure {
+                                developerLoading = false
+                                developerError = it.message ?: "Please sign in again."
+                            }
+                        }
+                    }
+                },
+                onBack = { screen = Screen.Dashboard }, onFounder = { screen = Screen.FounderConsole }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Identity -> if (user != null) Identity(user!!, busy, error, profileMessage,
-                onSave = { name ->
+                onSecurity = { screen = Screen.Security }, onDeveloper = { screen = Screen.Developer }, onSave = { name ->
                     busy = true; error = null; profileMessage = null
                     auth.updateName(name) { result ->
                         busy = false
@@ -147,9 +216,17 @@ private fun SparkApp() {
                         busy = false
                         result.onSuccess { user = it }.onFailure { error = it.message }
                     }
-                }, onBack = { screen = Screen.Dashboard })
+                }, onExit = {
+                error = null; busy = true
+                auth.logout { result ->
+                    busy = false
+                    result.onSuccess { user = null; screen = Screen.Welcome }
+                        .onFailure { error = it.message ?: "Could not sign out." }
+                }
+            }, onBack = { screen = Screen.Identity })
                 else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
         } }
+    }
     }
 }
 
@@ -234,6 +311,25 @@ private fun AuthScreen(register: Boolean, busy: Boolean, error: String?, onSubmi
 }
 
 @Composable
+private fun MfaScreen(busy: Boolean, error: String?, onSubmit: (String) -> Unit, onBack: () -> Unit) {
+    var code by remember { mutableStateOf("") }
+    Page {
+        TextButton(onClick = onBack, enabled = !busy) { Text("← Back to sign in", color = Gold) }
+        Text("Email verification", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        Text("Enter the six-digit verification code Appwrite sent to your account email. Check spam if it does not arrive.", color = Muted)
+        OutlinedTextField(value = code, onValueChange = { input ->
+            if (input.length <= 6 && input.all { it.isDigit() }) code = input
+        }, label = { Text("Six-digit code") }, singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+            modifier = Modifier.fillMaxWidth())
+        if (error != null) Text(error, color = Color(0xFFFF7777))
+        if (busy) CircularProgressIndicator(color = Gold)
+        Action("Verify and continue", { onSubmit(code) }, enabled = !busy && code.length == 6)
+        Text("Codes expire quickly. If your code fails, sign in again to request a new challenge. Never share your code.", color = Muted, fontSize = 12.sp)
+    }
+}
+
+@Composable
 private fun SparkField(value: String, onValue: (String) -> Unit, label: String, keyboardType: KeyboardType = KeyboardType.Text, password: Boolean = false) {
     OutlinedTextField(
         value = value, onValueChange = onValue, label = { Text(label) },
@@ -260,7 +356,7 @@ private fun InfoCard(title: String, detail: String) {
 }
 
 @Composable
-private fun Dashboard(user: SparkUser, busy: Boolean, error: String?, onIdentity: () -> Unit, onSecurity: () -> Unit, onApps: () -> Unit, onDeveloper: () -> Unit, onExit: () -> Unit) {
+private fun Dashboard(user: SparkUser, busy: Boolean, error: String?, onIdentity: () -> Unit, onSecurity: () -> Unit, onApps: () -> Unit, onDeveloper: () -> Unit) {
     Page {
         Text("SPARK STACK  /  IDENTITY", color = Gold, fontSize = 12.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold)
         Text("Your identity hub", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold)
@@ -283,14 +379,12 @@ private fun Dashboard(user: SparkUser, busy: Boolean, error: String?, onIdentity
         InfoCard("Developer platform", "Explore integration architecture, developer onboarding and the upcoming secure authorization platform.")
         Action("Open Developer Hub  →", onDeveloper, primary = false)
         if (error != null) Text(error, color = Color(0xFFFF7777))
-        Action(if (busy) "Signing out…" else "Sign out", onExit, primary = false, enabled = !busy)
     }
 }
 
 @Composable
 private fun ConnectedApps(onBack: () -> Unit) {
     Page {
-        TextButton(onClick = onBack) { Text("← Identity hub", color = Gold) }
         Text("Connected apps", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
         Text("Your future home for reviewing and managing access to Spark Stack services.", color = Muted, lineHeight = 22.sp)
         InfoCard("Spark Stack Academy", "Learning and student services • Integration planned")
@@ -302,17 +396,28 @@ private fun ConnectedApps(onBack: () -> Unit) {
 }
 
 @Composable
-private fun DeveloperHub(onBack: () -> Unit) {
+private fun DeveloperHub(apiConfigured: Boolean, loading: Boolean, error: String?, applications: List<DeveloperApplication>?, onRefresh: () -> Unit, onBack: () -> Unit, onFounder: () -> Unit) {
     val context = LocalContext.current
     Page {
         TextButton(onClick = onBack) { Text("← Identity hub", color = Gold) }
         Text("Developer Hub", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
         Text("Build experiences that can eventually connect to Spark ID.", color = Muted, lineHeight = 22.sp)
+        InfoCard("Developer API", if (apiConfigured) "A trusted backend is configured. Developer access still requires independent approval." else "Not connected: a trusted HTTPS developer backend has not been deployed. No JWT is requested or sent.")
+        if (apiConfigured) {
+            Action(if (loading) "Loading applications…" else "Refresh my applications", onRefresh, enabled = !loading)
+            if (loading) CircularProgressIndicator(color = Gold)
+            if (error != null) Text(error, color = Color(0xFFFF7777), fontSize = 13.sp)
+            if (applications != null) {
+                if (applications.isEmpty()) InfoCard("My applications", "No registered applications found.")
+                applications.forEach { app -> InfoCard(app.name, "Client ID: ${app.clientId} • Status: ${app.status}") }
+            }
+        }
         InfoCard("Developer access • Coming soon", "Third-party app registration, client identifiers, approved redirect URIs and integration credentials are not issued yet.")
         InfoCard("Integration model", "Planned standards-based OAuth 2.1 / OpenID Connect authorization with PKCE for public clients, scoped permissions and server-side token validation.")
         InfoCard("App management", "Future tools: register an app, manage redirect URIs, rotate credentials, inspect integration activity and revoke access.")
         InfoCard("Security first", "Never collect another user's Spark ID password in your own app. Never embed privileged Appwrite API keys or share Android session cookies between apps.")
         InfoCard("Current status", "Spark ID account registration, sign-in, email verification and password recovery work in the first-party Android app. Public developer authentication APIs are not live.")
+        Action("Founder / Admin console status  →", onFounder, primary = false)
         Action("Read developer integration guide  ↗", onClick = {
             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://phinehas-hashi.github.io/Spark-ID/developers.html")))
         })
@@ -320,7 +425,7 @@ private fun DeveloperHub(onBack: () -> Unit) {
 }
 
 @Composable
-private fun Identity(user: SparkUser, busy: Boolean, error: String?, message: String?, onSave: (String) -> Unit, onBack: () -> Unit) {
+private fun Identity(user: SparkUser, busy: Boolean, error: String?, message: String?, onSave: (String) -> Unit, onSecurity: () -> Unit, onDeveloper: () -> Unit, onBack: () -> Unit) {
     var editedName by remember(user.id) { mutableStateOf(user.name) }
     Page {
         TextButton(onClick = onBack) { Text("← Dashboard", color = Gold) }
@@ -341,6 +446,8 @@ private fun Identity(user: SparkUser, busy: Boolean, error: String?, message: St
             Text("Account ID: ${user.id}", color = Muted, fontSize = 12.sp)
             Text("Account profile only. This is not government ID or verified KYC.", color = Muted, fontSize = 12.sp)
         }
+        Action("Security & password  →", onSecurity, primary = false)
+        Action("Developer Hub  →", onDeveloper, primary = false)
         Text("Edit account profile", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
         SparkField(editedName, { editedName = it }, "Display name")
         if (error != null) Text(error, color = Color(0xFFFF7777), fontSize = 13.sp)
@@ -352,12 +459,12 @@ private fun Identity(user: SparkUser, busy: Boolean, error: String?, message: St
 }
 
 @Composable
-private fun Security(user: SparkUser, busy: Boolean, error: String?, message: String?, onPasswordChange: (String, String) -> Unit, onVerify: () -> Unit, onRefresh: () -> Unit, onBack: () -> Unit) {
+private fun Security(user: SparkUser, busy: Boolean, error: String?, message: String?, onPasswordChange: (String, String) -> Unit, onVerify: () -> Unit, onRefresh: () -> Unit, onExit: () -> Unit, onBack: () -> Unit) {
     var oldPassword by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     Page {
-        TextButton(onClick = onBack) { Text("← Dashboard", color = Gold) }
+        TextButton(onClick = onBack) { Text("← Profile", color = Gold) }
         Text("Account security", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
         Text("Your account status is read from Appwrite, not assumed from sign-in.", color = Muted)
         InfoCard("Email address", user.email)
@@ -378,6 +485,17 @@ private fun Security(user: SparkUser, busy: Boolean, error: String?, message: St
             oldPassword = ""; newPassword = ""; confirmPassword = ""
         }, enabled = !busy && oldPassword.isNotEmpty() && newPassword.length >= 8 && newPassword == confirmPassword)
         Action(if (busy) "Checking…" else "Refresh account status", onRefresh, primary = false, enabled = !busy)
+        HorizontalDivider(color = Muted.copy(alpha = .3f))
+        Text("Settings", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+        Text("Manage this device session. Signing out does not delete your Spark ID.", color = Muted, fontSize = 13.sp)
+        var confirmSignOut by remember { mutableStateOf(false) }
+        if (confirmSignOut) {
+            Text("Sign out of Spark ID on this device?", color = Color.White)
+            Action("Confirm sign out", onExit, primary = false, enabled = !busy)
+            TextButton(onClick = { confirmSignOut = false }) { Text("Cancel", color = Gold) }
+        } else {
+            Action("Sign out", { confirmSignOut = true }, primary = false, enabled = !busy)
+        }
         Text("Verification and recovery links open the Spark ID HTTPS callback page. Email verification does not constitute government identity/KYC verification.", color = Muted, fontSize = 12.sp)
     }
 }
@@ -396,5 +514,29 @@ private fun Recovery(busy: Boolean, error: String?, message: String?, onSend: (S
         if (busy) CircularProgressIndicator(color = Gold)
         Action("Send recovery email", { onSend(email.trim()) }, enabled = !busy && email.trim().contains("@"))
         Text("Never share recovery links or codes. After resetting your password, return here to sign in.", color = Muted, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun NotificationsScreen(onBack: () -> Unit) {
+    Page {
+        Text("Notifications", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+        Text("Your security and developer activity, in one place.", color = Muted)
+        InfoCard("No live notifications connected", "This screen is ready for an authenticated notifications service. No events, unread counts, or real-time delivery are simulated.")
+        InfoCard("Privacy by design", "Notifications must be scoped to your verified account. Founder and developer events require separate server-side authorization.")
+    }
+}
+
+@Composable
+private fun FounderConsole(onBack: () -> Unit) {
+    Page {
+        TextButton(onClick = onBack) { Text("← Developer Hub", color = Gold) }
+        Text("Founder Control Center", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+        Text("Privileged workspace · Access not yet enabled", color = Gold, fontWeight = FontWeight.Bold)
+        InfoCard("Secure access required", "The Android client cannot grant founder privileges. A trusted backend must authenticate the session, verify the administrator identity, and authorize each request.")
+        InfoCard("Developer approvals", "Pending reviews, approval and revocation actions will be loaded from the protected service. No sample records are treated as live.")
+        InfoCard("Platform intelligence", "Registered applications, verified developers and operational health will be displayed only after authenticated metrics endpoints are deployed.")
+        InfoCard("Security and audit", "Every privileged action must produce a durable audit event. Until then, write controls remain unavailable.")
+        Text("This screen is a secure integration placeholder, not an administrator login or authorization bypass.", color = Muted, fontSize = 12.sp)
     }
 }
