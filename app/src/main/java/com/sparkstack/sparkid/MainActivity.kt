@@ -60,6 +60,11 @@ private fun SparkApp() {
     var error by remember { mutableStateOf<String?>(null) }
     var securityMessage by remember { mutableStateOf<String?>(null) }
     var profileMessage by remember { mutableStateOf<String?>(null) }
+    var developerLoading by remember { mutableStateOf(false) }
+    var developerError by remember { mutableStateOf<String?>(null) }
+    var developerApps by remember { mutableStateOf<List<DeveloperApplication>?>(null) }
+    val developerWorker = remember { java.util.concurrent.Executors.newSingleThreadExecutor() }
+    val developerMain = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
     LaunchedEffect(Unit) {
         auth.restore { result ->
             result.onSuccess { restored -> if (restored != null) { user = restored; screen = Screen.Dashboard } }
@@ -157,7 +162,30 @@ private fun SparkApp() {
             Screen.FounderConsole -> if (user != null) FounderConsole(onBack = { screen = Screen.Developer }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Notifications -> if (user != null) NotificationsScreen(onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Apps -> if (user != null) ConnectedApps(onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
-            Screen.Developer -> if (user != null) DeveloperHub(apiConfigured = developerApi.configured, onBack = { screen = Screen.Dashboard }, onFounder = { screen = Screen.FounderConsole }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
+            Screen.Developer -> if (user != null) DeveloperHub(
+                apiConfigured = developerApi.configured,
+                loading = developerLoading, error = developerError, applications = developerApps,
+                onRefresh = {
+                    if (developerApi.configured && !developerLoading) {
+                        developerLoading = true; developerError = null; developerApps = null
+                        auth.createFirstPartyJwt { jwtResult ->
+                            jwtResult.onSuccess { jwt ->
+                                developerWorker.execute {
+                                    val result = runCatching { developerApi.listOwnApplications(jwt) }
+                                    developerMain.post {
+                                        developerLoading = false
+                                        result.onSuccess { developerApps = it }
+                                            .onFailure { developerError = it.message ?: "Could not load developer applications." }
+                                    }
+                                }
+                            }.onFailure {
+                                developerLoading = false
+                                developerError = it.message ?: "Please sign in again."
+                            }
+                        }
+                    }
+                },
+                onBack = { screen = Screen.Dashboard }, onFounder = { screen = Screen.FounderConsole }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Identity -> if (user != null) Identity(user!!, busy, error, profileMessage,
                 onSecurity = { screen = Screen.Security }, onDeveloper = { screen = Screen.Developer }, onSave = { name ->
                     busy = true; error = null; profileMessage = null
@@ -368,13 +396,22 @@ private fun ConnectedApps(onBack: () -> Unit) {
 }
 
 @Composable
-private fun DeveloperHub(apiConfigured: Boolean, onBack: () -> Unit, onFounder: () -> Unit) {
+private fun DeveloperHub(apiConfigured: Boolean, loading: Boolean, error: String?, applications: List<DeveloperApplication>?, onRefresh: () -> Unit, onBack: () -> Unit, onFounder: () -> Unit) {
     val context = LocalContext.current
     Page {
         TextButton(onClick = onBack) { Text("← Identity hub", color = Gold) }
         Text("Developer Hub", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
         Text("Build experiences that can eventually connect to Spark ID.", color = Muted, lineHeight = 22.sp)
         InfoCard("Developer API", if (apiConfigured) "A trusted backend is configured. Developer access still requires independent approval." else "Not connected: a trusted HTTPS developer backend has not been deployed. No JWT is requested or sent.")
+        if (apiConfigured) {
+            Action(if (loading) "Loading applications…" else "Refresh my applications", onRefresh, enabled = !loading)
+            if (loading) CircularProgressIndicator(color = Gold)
+            if (error != null) Text(error, color = Color(0xFFFF7777), fontSize = 13.sp)
+            if (applications != null) {
+                if (applications.isEmpty()) InfoCard("My applications", "No registered applications found.")
+                applications.forEach { app -> InfoCard(app.name, "Client ID: ${app.clientId} • Status: ${app.status}") }
+            }
+        }
         InfoCard("Developer access • Coming soon", "Third-party app registration, client identifiers, approved redirect URIs and integration credentials are not issued yet.")
         InfoCard("Integration model", "Planned standards-based OAuth 2.1 / OpenID Connect authorization with PKCE for public clients, scoped permissions and server-side token validation.")
         InfoCard("App management", "Future tools: register an app, manage redirect URIs, rotate credentials, inspect integration activity and revoke access.")
