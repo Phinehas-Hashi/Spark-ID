@@ -51,6 +51,7 @@ class MainActivity : ComponentActivity() {
 private fun SparkApp() {
     val context = LocalContext.current
     val auth = remember { SparkAuth(context.applicationContext) }
+    val developerApi = remember { DeveloperApi() }
     var screen by remember { mutableStateOf(Screen.Welcome) }
     var checkingSession by remember { mutableStateOf(true) }
     var user by remember { mutableStateOf<SparkUser?>(null) }
@@ -156,7 +157,7 @@ private fun SparkApp() {
             Screen.FounderConsole -> if (user != null) FounderConsole(onBack = { screen = Screen.Developer }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Notifications -> if (user != null) NotificationsScreen(onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Apps -> if (user != null) ConnectedApps(onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
-            Screen.Developer -> if (user != null) DeveloperHub(onBack = { screen = Screen.Dashboard }, onFounder = { screen = Screen.FounderConsole }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
+            Screen.Developer -> if (user != null) DeveloperHub(apiConfigured = developerApi.configured, onBack = { screen = Screen.Dashboard }, onFounder = { screen = Screen.FounderConsole }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Identity -> if (user != null) Identity(user!!, busy, error, profileMessage,
                 onSecurity = { screen = Screen.Security }, onDeveloper = { screen = Screen.Developer }, onSave = { name ->
                     busy = true; error = null; profileMessage = null
@@ -367,12 +368,13 @@ private fun ConnectedApps(onBack: () -> Unit) {
 }
 
 @Composable
-private fun DeveloperHub(onBack: () -> Unit, onFounder: () -> Unit) {
+private fun DeveloperHub(apiConfigured: Boolean, onBack: () -> Unit, onFounder: () -> Unit) {
     val context = LocalContext.current
     Page {
         TextButton(onClick = onBack) { Text("← Identity hub", color = Gold) }
         Text("Developer Hub", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
         Text("Build experiences that can eventually connect to Spark ID.", color = Muted, lineHeight = 22.sp)
+        InfoCard("Developer API", if (apiConfigured) "A trusted backend is configured. Developer access still requires independent approval." else "Not connected: a trusted HTTPS developer backend has not been deployed. No JWT is requested or sent.")
         InfoCard("Developer access • Coming soon", "Third-party app registration, client identifiers, approved redirect URIs and integration credentials are not issued yet.")
         InfoCard("Integration model", "Planned standards-based OAuth 2.1 / OpenID Connect authorization with PKCE for public clients, scoped permissions and server-side token validation.")
         InfoCard("App management", "Future tools: register an app, manage redirect URIs, rotate credentials, inspect integration activity and revoke access.")
