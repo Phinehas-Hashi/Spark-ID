@@ -2,6 +2,7 @@
 // Read-only composition root. No listener starts when this module is imported.
 // Requires private server environment; no approval writes or OAuth issuance.
 const http = require("node:http");
+const { validateListingEnvironment } = require("./listing-environment");
 const { createAppwriteApplicationStore } = require("./appwrite-application-store");
 const { createAppwriteDeveloperListing } = require("./appwrite-developer-listing");
 const { createAppwriteDeveloperListingApi } = require("./appwrite-developer-listing-api");
@@ -31,6 +32,7 @@ if (require.main === module) {
     process.exitCode = 1;
   } else {
     try {
+      validateListingEnvironment();
       const server = createReadOnlyDeveloperServer();
       server.listen(0, "127.0.0.1", () => {
         process.stdout.write("Read-only developer listing listening on loopback port " +
