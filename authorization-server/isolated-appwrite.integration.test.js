@@ -6,6 +6,7 @@ const assert = require("node:assert/strict");
 const { validateListingEnvironment } = require("./listing-environment");
 const { createAppwriteApplicationStore } = require("./appwrite-application-store");
 const { createAppwriteDeveloperListing } = require("./appwrite-developer-listing");
+const { createAppwriteAuthenticator } = require("./appwrite-auth");
 
 const enabled = process.env.SPARK_ID_RUN_APPWRITE_INTEGRATION === "true";
 test("isolated Appwrite: verified approved owner can list only their applications", { skip: !enabled && "Requires explicit isolated Appwrite opt-in" }, async () => {
@@ -16,6 +17,8 @@ test("isolated Appwrite: verified approved owner can list only their application
   const subject = process.env.SPARK_ID_TEST_APPROVED_SUBJECT;
   assert.ok(typeof jwt === "string" && jwt.length >= 20, "Local test JWT required");
   assert.match(subject || "", /^[A-Za-z0-9_-]{3,128}$/, "Approved test subject required");
+  const principal = await createAppwriteAuthenticator()(jwt);
+  assert.equal(principal && principal.subject, subject, "JWT must belong to isolated test subject");
   const applications = createAppwriteApplicationStore();
   const list = createAppwriteDeveloperListing({ applications });
   // This read-only integration validates actual authentication, authoritative approval,
