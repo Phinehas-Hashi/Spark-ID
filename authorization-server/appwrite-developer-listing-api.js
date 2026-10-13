@@ -21,8 +21,10 @@ function createAppwriteDeveloperListingApi({ list } = {}) {
         return reply(401, { error: "Authentication required" });
       const applications = await list(authorization.slice(7));
       return reply(200, { applications });
-    } catch {
-      // Deny on any auth, authority, or storage failure; never expose internals.
+    } catch (error) {
+      // Only a typed, known policy denial is 403. Infrastructure failures remain 503.
+      if (error && error.code === "DEVELOPER_ACCESS_DENIED")
+        return reply(403, { error: "Developer access denied" });
       return reply(503, { error: "Developer service unavailable" });
     }
   };
