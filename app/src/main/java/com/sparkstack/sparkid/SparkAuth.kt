@@ -60,7 +60,7 @@ class SparkAuth(context: Context) {
     private val main = Handler(Looper.getMainLooper())
     private var sessionCookie: String? = null
 
-    class MfaRequiredException : IllegalStateException("Authenticator verification required.")
+    class MfaRequiredException : IllegalStateException("Additional verification required.")
 
     private class SessionExpiredException : IllegalStateException("Session expired. Please sign in again.")
 
@@ -192,6 +192,19 @@ class SparkAuth(context: Context) {
         require(code.matches(Regex("[0-9]{6}"))) { "Enter the six-digit code sent to your email." }
         request("PUT", "/mfa/challenge", JSONObject().put("challengeId", challengeId).put("otp", code))
         parseUser(request("GET", ""))
+    }
+
+    /**
+     * Mint a short-lived first-party JWT only after the completed Appwrite session
+     * can access /account. Never persist, log, or send this JWT to third-party apps.
+     * The callback must deliver it only to a trusted first-party API transport.
+     */
+    fun createFirstPartyJwt(done: (Result<String>) -> Unit) = execute(done) {
+        check(sessionCookie != null) { "Sign in before accessing developer services." }
+        parseUser(request("GET", "")) // Appwrite enforces completed MFA here.
+        val jwt = request("POST", "/jwts").getString("jwt")
+        check(jwt.isNotBlank()) { "Appwrite did not issue an authentication token." }
+        jwt
     }
 
     fun logout(done: (Result<Unit>) -> Unit) = execute(done) {
