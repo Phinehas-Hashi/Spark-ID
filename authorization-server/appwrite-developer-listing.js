@@ -14,7 +14,7 @@ function createAppwriteDeveloperListing({ auth, approvals, applications, authOpt
       throw new Error("Authentication required");
     const principal = await authenticate(credential);
     if (!principal || principal.verified !== true || typeof principal.subject !== "string" ||
-        !/^[A-Za-z0-9_-]{3,128}$/.test(principal.subject)) throw new Error("Developer access denied");
+        !/^[A-Za-z0-9_-]{3,128}$/.test(principal.subject)) throw Object.assign(new Error("Developer access denied"), { code: "DEVELOPER_ACCESS_DENIED" });
     const approval = await authority.get(principal.subject);
     if (!approval || approval.subject !== principal.subject || approval.status !== "approved" || approval.enabled !== true)
       throw new Error("Developer access denied");
