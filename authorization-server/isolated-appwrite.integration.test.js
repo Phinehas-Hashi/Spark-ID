@@ -28,3 +28,18 @@ test("isolated Appwrite: verified approved owner can list only their application
   const owned = await applications.listByOwner(subject);
   assert.deepEqual(rows.map(row => row.id).sort(), owned.map(row => row.id).sort());
 });
+
+test("isolated Appwrite: malformed and invalid credentials cannot list applications", { skip: !enabled && "Requires explicit isolated Appwrite opt-in" }, async () => {
+  assert.equal(process.env.SPARK_ID_ISOLATED_APPWRITE_PROJECT, "true",
+    "Explicit isolated-project confirmation required");
+  validateListingEnvironment();
+  const applications = createAppwriteApplicationStore();
+  // Invalid credentials must fail before the approval or application stores are reached.
+  const list = createAppwriteDeveloperListing({ applications });
+  await assert.rejects(() => list("malformed"), /Authentication required/);
+  const invalidJwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJub2JvZHkifQ.invalidsignature";
+  const principal = await createAppwriteAuthenticator()(invalidJwt);
+  assert.equal(principal, null, "Invalid JWT must never produce a verified principal");
+  await assert.rejects(() => list(invalidJwt), error =>
+    error && error.code === "DEVELOPER_ACCESS_DENIED");
+});
