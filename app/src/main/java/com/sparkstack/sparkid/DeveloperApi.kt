@@ -1,6 +1,5 @@
 package com.sparkstack.sparkid
 
-import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -29,7 +28,7 @@ class DeveloperApi(private val trustedOrigin: String? = null) {
         require(jwt.matches(Regex("[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+"))) {
             "Invalid first-party authentication token."
         }
-        val connection = URL(origin + "/internal/developer/apps").openConnection() as HttpURLConnection
+        val connection = URL(origin + "/v1/developer/apps").openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "GET"
             connection.instanceFollowRedirects = false
@@ -45,7 +44,7 @@ class DeveloperApi(private val trustedOrigin: String? = null) {
                     require(data.length() <= 100) { "Unexpected developer API response." }
                     (0 until data.length()).map { i ->
                         val item = data.getJSONObject(i)
-                        DeveloperApplication(item.getString("clientId"), item.getString("name"), item.getString("status"))
+                        DeveloperApplication(item.getString("id"), item.getString("name"), item.getString("status"))
                     }
                 }
                 401 -> throw IllegalStateException("Session expired. Sign in again.")
