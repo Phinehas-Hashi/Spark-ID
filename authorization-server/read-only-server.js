@@ -13,7 +13,12 @@ function createReadOnlyDeveloperServer({ applications, auth, approvals, authOpti
     applications: store, auth, approvals, authOptions, approvalOptions
   });
   const handler = createAppwriteDeveloperListingApi({ list });
-  return http.createServer((req, res) => {
+  const server = http.createServer((req, res) => {
+    if (req.method === "GET" && req.url === "/healthz") {
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
+      res.end(JSON.stringify({ status: "ok" }));
+      return;
+    }
     // Do not allow browser-based cross-origin credential use.
     if (req.headers.origin) {
       res.writeHead(403, { "Cache-Control": "no-store", "Content-Type": "application/json" });
@@ -22,6 +27,11 @@ function createReadOnlyDeveloperServer({ applications, auth, approvals, authOpti
     }
     void handler(req, res);
   });
+  server.requestTimeout = 10000;
+  server.headersTimeout = 5000;
+  server.keepAliveTimeout = 5000;
+  server.maxRequestsPerSocket = 100;
+  return server;
 }
 
 if (require.main === module) {
