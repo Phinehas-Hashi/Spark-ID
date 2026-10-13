@@ -37,7 +37,7 @@ private val Muted = Color(0xFF9AA6BD)
 private val Panel = Color(0xFF111B30)
 private val Background = Color(0xFF050816)
 
-private enum class Screen { Welcome, Login, Register, Dashboard, Identity, Security, Recovery, Apps, Developer, Notifications, FounderConsole }
+private enum class Screen { Welcome, Login, Register, Mfa, Dashboard, Identity, Security, Recovery, Apps, Developer, Notifications, FounderConsole }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,6 +55,7 @@ private fun SparkApp() {
     var checkingSession by remember { mutableStateOf(true) }
     var user by remember { mutableStateOf<SparkUser?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var mfaChallengeId by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var securityMessage by remember { mutableStateOf<String?>(null) }
     var profileMessage by remember { mutableStateOf<String?>(null) }
@@ -70,7 +71,16 @@ private fun SparkApp() {
         val callback: (Result<SparkUser>) -> Unit = { result ->
             busy = false
             result.onSuccess { user = it; screen = Screen.Dashboard }
-                .onFailure { error = it.message ?: "Authentication failed. Please retry." }
+                .onFailure { failure ->
+                    if (failure is SparkAuth.MfaRequiredException) {
+                        busy = true
+                        auth.startTotpChallenge { challenge ->
+                            busy = false
+                            challenge.onSuccess { mfaChallengeId = it; error = null; screen = Screen.Mfa }
+                                .onFailure { error = it.message ?: "Could not start authenticator verification." }
+                        }
+                    } else error = failure.message ?: "Authentication failed. Please retry."
+                }
         }
         if (register) auth.register(name, email, password, callback)
         else auth.login(email, password, callback)
@@ -82,7 +92,7 @@ private fun SparkApp() {
             Screen.FounderConsole -> Screen.Developer
             Screen.Developer -> Screen.Dashboard
             Screen.Dashboard -> Screen.Dashboard
-            Screen.Login, Screen.Register, Screen.Recovery -> Screen.Welcome
+            Screen.Login, Screen.Register, Screen.Recovery, Screen.Mfa -> Screen.Welcome
             Screen.Welcome -> Screen.Welcome
         }
     }
@@ -122,6 +132,18 @@ private fun SparkApp() {
             Screen.Welcome -> Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Login -> AuthScreen(false, busy, error, onSubmit = { name, email, password -> authenticate(false, name, email, password) }, onBack = { error = null; screen = Screen.Welcome }, onSwitch = { error = null; screen = Screen.Register }, onForgot = { error = null; securityMessage = null; screen = Screen.Recovery })
             Screen.Register -> AuthScreen(true, busy, error, onSubmit = { name, email, password -> authenticate(true, name, email, password) }, onBack = { error = null; screen = Screen.Welcome }, onSwitch = { error = null; screen = Screen.Login })
+            Screen.Mfa -> MfaScreen(busy, error, onSubmit = { code ->
+                val id = mfaChallengeId
+                if (id == null) error = "Verification challenge missing. Please sign in again."
+                else {
+                    busy = true; error = null
+                    auth.completeTotpChallenge(id, code) { result ->
+                        busy = false
+                        result.onSuccess { user = it; mfaChallengeId = null; screen = Screen.Dashboard }
+                            .onFailure { error = it.message ?: "Verification failed. Try a fresh code." }
+                    }
+                }
+            }, onBack = { mfaChallengeId = null; error = null; screen = Screen.Login })
             Screen.Recovery -> Recovery(busy, error, securityMessage, onSend = { email ->
                 busy = true; error = null; securityMessage = null
                 auth.sendRecovery(email) { result ->
@@ -256,6 +278,25 @@ private fun AuthScreen(register: Boolean, busy: Boolean, error: String?, onSubmi
         TextButton(onClick = onSwitch) {
             Text(if (register) "Already registered? Sign in" else "New here? Create Spark ID", color = Gold)
         }
+    }
+}
+
+@Composable
+private fun MfaScreen(busy: Boolean, error: String?, onSubmit: (String) -> Unit, onBack: () -> Unit) {
+    var code by remember { mutableStateOf("") }
+    Page {
+        TextButton(onClick = onBack, enabled = !busy) { Text("← Back to sign in", color = Gold) }
+        Text("Authenticator verification", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        Text("Open your authenticator app and enter the current six-digit code for Spark ID.", color = Muted)
+        OutlinedTextField(value = code, onValueChange = { input ->
+            if (input.length <= 6 && input.all { it.isDigit() }) code = input
+        }, label = { Text("Six-digit code") }, singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+            modifier = Modifier.fillMaxWidth())
+        if (error != null) Text(error, color = Color(0xFFFF7777))
+        if (busy) CircularProgressIndicator(color = Gold)
+        Action("Verify and continue", { onSubmit(code) }, enabled = !busy && code.length == 6)
+        Text("Codes expire quickly. If one fails, wait for a fresh code and try again. Never share your code.", color = Muted, fontSize = 12.sp)
     }
 }
 
