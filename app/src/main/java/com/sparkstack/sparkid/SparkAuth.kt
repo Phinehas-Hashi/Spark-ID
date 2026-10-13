@@ -179,7 +179,12 @@ class SparkAuth(context: Context) {
 
     fun startTotpChallenge(done: (Result<String>) -> Unit) = execute(done) {
         val factors = request("GET", "/mfa/factors")
-        check(factors.optBoolean("totp")) { "Authenticator app is not an available MFA factor for this account." }
+        check(factors.optBoolean("totp")) {
+            "Authenticator unavailable for this account. Available factors: " +
+                listOf("email", "phone", "recoveryCode").filter { factors.optBoolean(it) }
+                    .joinToString(", ").ifBlank { "none reported" } +
+                ". Confirm you are signing in to the intended account."
+        }
         request("POST", "/mfa/challenge", JSONObject().put("factor", "totp")).getString("\$id")
     }
 
