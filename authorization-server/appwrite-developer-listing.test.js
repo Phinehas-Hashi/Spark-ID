@@ -36,3 +36,20 @@ test("cross-owner application rows fail closed", async () => {
 test("requires application adapter", () => {
   assert.throws(() => createAppwriteDeveloperListing({ auth: async () => {}, approvals: { get: async () => {} } }), /adapters required/);
 });
+
+test("pending, revoked and disabled developer denials carry policy code", async () => {
+  for (const approval of [null, { subject, status: "pending", enabled: false },
+    { subject, status: "revoked", enabled: false }, { subject, status: "approved", enabled: false }]) {
+    const f = setup({ approval });
+    await assert.rejects(f.list(token), error => error.code === "DEVELOPER_ACCESS_DENIED");
+    assert.equal(f.reads(), 0);
+  }
+});
+test("authority outages are not disguised as policy denials", async () => {
+  const list = createAppwriteDeveloperListing({
+    auth: async () => ({ verified: true, subject }),
+    approvals: { get: async () => { throw new Error("storage outage"); } },
+    applications: { listByOwner: async () => { throw new Error("must not read"); } }
+  });
+  await assert.rejects(list(token), error => error.message === "storage outage" && error.code !== "DEVELOPER_ACCESS_DENIED");
+});
