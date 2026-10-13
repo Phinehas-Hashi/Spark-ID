@@ -2,7 +2,7 @@
 // One-time, create-only staging bootstrap. Never accepts production project credentials.
 // Intentionally refuses existing resources rather than altering an unknown schema.
 const { Client, TablesDB, IndexType } = require("node-appwrite");
-const STAGING = "6ace02c3002acdb7604d";
+const STAGING = "6ace033b0026754b7531";
 const PRODUCTION = "6accc223002dbb161c74";
 const env = process.env;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
