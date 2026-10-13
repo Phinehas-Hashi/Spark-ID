@@ -60,6 +60,8 @@ class SparkAuth(context: Context) {
     private val main = Handler(Looper.getMainLooper())
     private var sessionCookie: String? = null
 
+    class MfaRequiredException : IllegalStateException("Authenticator verification required.")
+
     private class SessionExpiredException : IllegalStateException("Session expired. Please sign in again.")
 
     private fun request(method: String, path: String, body: JSONObject? = null, sendSession: Boolean = true): JSONObject {
@@ -83,7 +85,8 @@ class SparkAuth(context: Context) {
             if (status !in 200..299) throw IllegalStateException(
                 when (status) {
                     401 -> when { 
-                        path.isEmpty() && method == "GET" -> "Account profile rejected session (HTTP 401; type: ${json.optString("type", "unknown")})."
+                        path.isEmpty() && method == "GET" && json.optString("type") == "user_more_factors_required" -> throw MfaRequiredException()
+                        path.isEmpty() && method == "GET" -> throw SessionExpiredException()
                         path == "/sessions/email" && method == "POST" -> "Email or password was not accepted. Check your details or reset your password."
                         else -> "Authentication required. Please sign in again."
                     }
@@ -161,6 +164,7 @@ class SparkAuth(context: Context) {
         request("POST", "/sessions/email", JSONObject().put("email", email.trim()).put("password", password), sendSession = false)
         if (sessionCookie == null) throw IllegalStateException("Sign-in succeeded but no Appwrite session cookie was received. Please retry.")
         try { parseUser(request("GET", "")) }
+        catch (e: MfaRequiredException) { throw e }
         catch (e: Exception) { throw IllegalStateException("After successful sign-in: ${e.message ?: "Account lookup failed."}") }
     }
 
@@ -170,6 +174,18 @@ class SparkAuth(context: Context) {
         clearCookie()
         request("POST", "/sessions/email", JSONObject().put("email", email.trim()).put("password", password), sendSession = false)
         if (sessionCookie == null) throw IllegalStateException("Account created but no Appwrite session cookie was received. Please sign in.")
+        parseUser(request("GET", ""))
+    }
+
+    fun startTotpChallenge(done: (Result<String>) -> Unit) = execute(done) {
+        val factors = request("GET", "/mfa/factors")
+        check(factors.optBoolean("totp")) { "Authenticator app is not an available MFA factor for this account." }
+        request("POST", "/mfa/challenge", JSONObject().put("factor", "totp")).getString("\$id")
+    }
+
+    fun completeTotpChallenge(challengeId: String, code: String, done: (Result<SparkUser>) -> Unit) = execute(done) {
+        require(code.matches(Regex("[0-9]{6}"))) { "Enter the six-digit code from your authenticator app." }
+        request("PUT", "/mfa/challenge", JSONObject().put("challengeId", challengeId).put("otp", code))
         parseUser(request("GET", ""))
     }
 
