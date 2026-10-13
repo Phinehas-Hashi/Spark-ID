@@ -177,19 +177,19 @@ class SparkAuth(context: Context) {
         parseUser(request("GET", ""))
     }
 
-    fun startTotpChallenge(done: (Result<String>) -> Unit) = execute(done) {
+    fun startEmailChallenge(done: (Result<String>) -> Unit) = execute(done) {
         val factors = request("GET", "/mfa/factors")
-        check(factors.optBoolean("totp")) {
-            "Authenticator unavailable for this account. Available factors: " +
+        check(factors.optBoolean("email")) {
+            "Email verification unavailable for this account. Available factors: " +
                 listOf("email", "phone", "recoveryCode").filter { factors.optBoolean(it) }
                     .joinToString(", ").ifBlank { "none reported" } +
                 ". Confirm you are signing in to the intended account."
         }
-        request("POST", "/mfa/challenge", JSONObject().put("factor", "totp")).getString("\$id")
+        request("POST", "/mfa/challenge", JSONObject().put("factor", "email")).getString("\$id")
     }
 
-    fun completeTotpChallenge(challengeId: String, code: String, done: (Result<SparkUser>) -> Unit) = execute(done) {
-        require(code.matches(Regex("[0-9]{6}"))) { "Enter the six-digit code from your authenticator app." }
+    fun completeEmailChallenge(challengeId: String, code: String, done: (Result<SparkUser>) -> Unit) = execute(done) {
+        require(code.matches(Regex("[0-9]{6}"))) { "Enter the six-digit code sent to your email." }
         request("PUT", "/mfa/challenge", JSONObject().put("challengeId", challengeId).put("otp", code))
         parseUser(request("GET", ""))
     }
