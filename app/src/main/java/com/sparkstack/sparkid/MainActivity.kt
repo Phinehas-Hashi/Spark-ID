@@ -74,10 +74,10 @@ private fun SparkApp() {
                 .onFailure { failure ->
                     if (failure is SparkAuth.MfaRequiredException) {
                         busy = true
-                        auth.startTotpChallenge { challenge ->
+                        auth.startEmailChallenge { challenge ->
                             busy = false
                             challenge.onSuccess { mfaChallengeId = it; error = null; screen = Screen.Mfa }
-                                .onFailure { error = it.message ?: "Could not start authenticator verification." }
+                                .onFailure { error = it.message ?: "Could not send email verification code." }
                         }
                     } else error = failure.message ?: "Authentication failed. Please retry."
                 }
@@ -137,7 +137,7 @@ private fun SparkApp() {
                 if (id == null) error = "Verification challenge missing. Please sign in again."
                 else {
                     busy = true; error = null
-                    auth.completeTotpChallenge(id, code) { result ->
+                    auth.completeEmailChallenge(id, code) { result ->
                         busy = false
                         result.onSuccess { user = it; mfaChallengeId = null; screen = Screen.Dashboard }
                             .onFailure { error = it.message ?: "Verification failed. Try a fresh code." }
@@ -286,8 +286,8 @@ private fun MfaScreen(busy: Boolean, error: String?, onSubmit: (String) -> Unit,
     var code by remember { mutableStateOf("") }
     Page {
         TextButton(onClick = onBack, enabled = !busy) { Text("← Back to sign in", color = Gold) }
-        Text("Authenticator verification", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color.White)
-        Text("Open your authenticator app and enter the current six-digit code for Spark ID.", color = Muted)
+        Text("Email verification", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        Text("Enter the six-digit verification code Appwrite sent to your account email. Check spam if it does not arrive.", color = Muted)
         OutlinedTextField(value = code, onValueChange = { input ->
             if (input.length <= 6 && input.all { it.isDigit() }) code = input
         }, label = { Text("Six-digit code") }, singleLine = true,
@@ -296,7 +296,7 @@ private fun MfaScreen(busy: Boolean, error: String?, onSubmit: (String) -> Unit,
         if (error != null) Text(error, color = Color(0xFFFF7777))
         if (busy) CircularProgressIndicator(color = Gold)
         Action("Verify and continue", { onSubmit(code) }, enabled = !busy && code.length == 6)
-        Text("Codes expire quickly. If one fails, wait for a fresh code and try again. Never share your code.", color = Muted, fontSize = 12.sp)
+        Text("Codes expire quickly. If your code fails, sign in again to request a new challenge. Never share your code.", color = Muted, fontSize = 12.sp)
     }
 }
 
