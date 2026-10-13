@@ -1,7 +1,7 @@
 "use strict";
 // One-time, create-only staging bootstrap. Never accepts production project credentials.
 // Intentionally refuses existing resources rather than altering an unknown schema.
-const { Client, TablesDB, IndexType, OrderBy } = require("node-appwrite");
+const { Client, TablesDB, IndexType } = require("node-appwrite");
 const STAGING = "6ace02c3002acdb7604d";
 const PRODUCTION = "6accc223002dbb161c74";
 const env = process.env;
@@ -57,7 +57,7 @@ async function main() {
     }
     await db.createIndex({ databaseId, tableId, key: table.index[0],
       type: table.index[1] === "unique" ? IndexType.Unique : IndexType.Key,
-      columns: table.index[2], orders: [OrderBy.Asc] });
+      columns: table.index[2], orders: ["ASC"] });
     await waitFor(() => db.getIndex({ databaseId, tableId, key: table.index[0] }), tableId + " index");
     process.stdout.write("Created private table and index: " + tableId + "\n");
   }
