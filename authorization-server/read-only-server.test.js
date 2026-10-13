@@ -31,3 +31,37 @@ test("rejects browser-origin requests before authentication", async () => {
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+test("health probe returns only static status and does not invoke privileged adapters", async () => {
+  let calls = 0;
+  const server = createReadOnlyDeveloperServer({
+    applications: { listByOwner: async () => { calls++; return []; } },
+    auth: async () => { calls++; return null; },
+    approvals: { get: async () => { calls++; return null; } }
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const base = "http://127.0.0.1:" + server.address().port;
+    const response = await fetch(base + "/healthz");
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { status: "ok" });
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(calls, 0);
+    const other = await fetch(base + "/healthz?details=1");
+    assert.equal(other.status, 404);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+test("HTTP connection lifetime is bounded", () => {
+  const server = createReadOnlyDeveloperServer({
+    applications: { listByOwner: async () => [] },
+    auth: async () => null,
+    approvals: { get: async () => null }
+  });
+  assert.equal(server.requestTimeout, 10000);
+  assert.equal(server.headersTimeout, 5000);
+  assert.equal(server.keepAliveTimeout, 5000);
+  assert.equal(server.maxRequestsPerSocket, 100);
+  server.close();
+});
