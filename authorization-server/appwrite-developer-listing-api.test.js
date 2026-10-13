@@ -41,3 +41,17 @@ test("listing failure does not leak internal details", async () => {
   const { res } = await send("GET", "/v1/developer/apps", "Bearer " + TOKEN, async () => { throw new Error("private database secret"); });
   assert.equal(res.status, 503); assert.equal(JSON.stringify(res.body).includes("secret"), false);
 });
+
+test("known policy denial returns 403 without exposing internal detail", async () => {
+  const { res } = await send("GET", "/v1/developer/apps", "Bearer " + TOKEN, async () => {
+    throw Object.assign(new Error("private approval detail"), { code: "DEVELOPER_ACCESS_DENIED" });
+  });
+  assert.equal(res.status, 403);
+  assert.deepEqual(res.body, { error: "Developer access denied" });
+});
+test("untyped errors and storage failures remain 503", async () => {
+  const { res } = await send("GET", "/v1/developer/apps", "Bearer " + TOKEN, async () => {
+    throw Object.assign(new Error("database unavailable"), { code: "DATABASE_DOWN" });
+  });
+  assert.equal(res.status, 503);
+});
