@@ -63,6 +63,7 @@ private fun SparkApp() {
     var developerLoading by remember { mutableStateOf(false) }
     var developerError by remember { mutableStateOf<String?>(null) }
     var developerApps by remember { mutableStateOf<List<DeveloperApplication>?>(null) }
+    var developerMessage by remember { mutableStateOf<String?>(null) }
     val developerWorker = remember { java.util.concurrent.Executors.newSingleThreadExecutor() }
     val developerMain = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
     LaunchedEffect(Unit) {
@@ -164,7 +165,29 @@ private fun SparkApp() {
             Screen.Apps -> if (user != null) ConnectedApps(onBack = { screen = Screen.Dashboard }) else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
             Screen.Developer -> if (user != null) DeveloperHub(
                 apiConfigured = developerApi.configured,
-                loading = developerLoading, error = developerError, applications = developerApps,
+                loading = developerLoading, error = developerError, applications = developerApps, message = developerMessage,
+                onRegister = { appName, appType, redirect ->
+                    if (developerApi.configured && !developerLoading) {
+                        developerLoading = true; developerError = null; developerMessage = null
+                        auth.createFirstPartyJwt { jwtResult ->
+                            jwtResult.onSuccess { jwt ->
+                                developerWorker.execute {
+                                    val result = runCatching { developerApi.register(jwt, appName, appType, redirect) }
+                                    developerMain.post {
+                                        developerLoading = false
+                                        result.onSuccess { app ->
+                                            developerMessage = "Application submitted for review."
+                                            developerApps = developerApps?.plus(app)
+                                        }.onFailure { developerError = it.message ?: "Registration failed." }
+                                    }
+                                }
+                            }.onFailure {
+                                developerLoading = false
+                                developerError = it.message ?: "Please sign in again."
+                            }
+                        }
+                    }
+                },
                 onRefresh = {
                     if (developerApi.configured && !developerLoading) {
                         developerLoading = true; developerError = null; developerApps = null
@@ -396,7 +419,10 @@ private fun ConnectedApps(onBack: () -> Unit) {
 }
 
 @Composable
-private fun DeveloperHub(apiConfigured: Boolean, loading: Boolean, error: String?, applications: List<DeveloperApplication>?, onRefresh: () -> Unit, onBack: () -> Unit, onFounder: () -> Unit) {
+private fun DeveloperHub(apiConfigured: Boolean, loading: Boolean, error: String?, applications: List<DeveloperApplication>?, message: String?, onRegister: (String, String, String) -> Unit, onRefresh: () -> Unit, onBack: () -> Unit, onFounder: () -> Unit) {
+    var appName by remember { mutableStateOf("") }
+    var appType by remember { mutableStateOf("web") }
+    var redirect by remember { mutableStateOf("") }
     val context = LocalContext.current
     Page {
         TextButton(onClick = onBack) { Text("← Identity hub", color = Gold) }
@@ -404,6 +430,20 @@ private fun DeveloperHub(apiConfigured: Boolean, loading: Boolean, error: String
         Text("Build experiences that can eventually connect to Spark ID.", color = Muted, lineHeight = 22.sp)
         InfoCard("Developer API", if (apiConfigured) "A trusted backend is configured. Developer access still requires independent approval." else "Not connected: a trusted HTTPS developer backend has not been deployed. No JWT is requested or sent.")
         if (apiConfigured) {
+            Text("Register an application", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("Only independently approved developers can submit applications. Every new application starts pending review.", color = Muted)
+            SparkField(appName, { appName = it }, "Application name")
+            Text("Application type", color = Muted)
+            listOf("web", "native", "confidential").forEach { type ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = appType == type, onClick = { appType = type })
+                    Text(type.replaceFirstChar { it.uppercase() }, color = Color.White)
+                }
+            }
+            SparkField(redirect, { redirect = it }, "HTTPS redirect URI")
+            Action("Submit for review", { onRegister(appName, appType, redirect.trim()) },
+                enabled = !loading && appName.trim().length in 3..80 && redirect.startsWith("https://"))
+            if (message != null) Text(message, color = Color(0xFF79D7B0))
             Action(if (loading) "Loading applications…" else "Refresh my applications", onRefresh, enabled = !loading)
             if (loading) CircularProgressIndicator(color = Gold)
             if (error != null) Text(error, color = Color(0xFFFF7777), fontSize = 13.sp)
@@ -412,7 +452,7 @@ private fun DeveloperHub(apiConfigured: Boolean, loading: Boolean, error: String
                 applications.forEach { app -> InfoCard(app.name, "Client ID: ${app.clientId} • Status: ${app.status}") }
             }
         }
-        InfoCard("Developer access • Coming soon", "Third-party app registration, client identifiers, approved redirect URIs and integration credentials are not issued yet.")
+        InfoCard("Developer access", "Registration is available only when a trusted first-party backend is configured and your developer account is independently approved. Public OAuth credentials are not issued.")
         InfoCard("Integration model", "Planned standards-based OAuth 2.1 / OpenID Connect authorization with PKCE for public clients, scoped permissions and server-side token validation.")
         InfoCard("App management", "Future tools: register an app, manage redirect URIs, rotate credentials, inspect integration activity and revoke access.")
         InfoCard("Security first", "Never collect another user's Spark ID password in your own app. Never embed privileged Appwrite API keys or share Android session cookies between apps.")
