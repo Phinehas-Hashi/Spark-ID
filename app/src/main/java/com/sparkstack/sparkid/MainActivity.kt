@@ -429,7 +429,7 @@ private fun DeveloperHub(apiConfigured: Boolean, loading: Boolean, error: String
         Text("Developer Hub", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
         Text("Build experiences that can eventually connect to Spark ID.", color = Muted, lineHeight = 22.sp)
         InfoCard("Developer API", if (apiConfigured) "A trusted backend is configured. Developer access still requires independent approval." else "Not connected: a trusted HTTPS developer backend has not been deployed. No JWT is requested or sent.")
-        if (apiConfigured) {
+        run {
             Text("Register an application", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text("Only independently approved developers can submit applications. Every new application starts pending review.", color = Muted)
             SparkField(appName, { appName = it }, "Application name")
@@ -442,9 +442,10 @@ private fun DeveloperHub(apiConfigured: Boolean, loading: Boolean, error: String
             }
             SparkField(redirect, { redirect = it }, "HTTPS redirect URI")
             Action("Submit for review", { onRegister(appName, appType, redirect.trim()) },
-                enabled = !loading && appName.trim().length in 3..80 && redirect.startsWith("https://"))
+                enabled = apiConfigured && !loading && appName.trim().length in 3..80 && redirect.startsWith("https://"))
+            if (!apiConfigured) Text("Preview only • Submission is disabled until a trusted staging API is configured.", color = Gold, fontSize = 12.sp)
             if (message != null) Text(message, color = Color(0xFF79D7B0))
-            Action(if (loading) "Loading applications…" else "Refresh my applications", onRefresh, enabled = !loading)
+            Action(if (loading) "Loading applications…" else "Refresh my applications", onRefresh, enabled = apiConfigured && !loading)
             if (loading) CircularProgressIndicator(color = Gold)
             if (error != null) Text(error, color = Color(0xFFFF7777), fontSize = 13.sp)
             if (applications != null) {
@@ -560,10 +561,15 @@ private fun Recovery(busy: Boolean, error: String?, message: String?, onSend: (S
 @Composable
 private fun NotificationsScreen(onBack: () -> Unit) {
     Page {
-        Text("Notifications", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
-        Text("Your security and developer activity, in one place.", color = Muted)
-        InfoCard("No live notifications connected", "This screen is ready for an authenticated notifications service. No events, unread counts, or real-time delivery are simulated.")
-        InfoCard("Privacy by design", "Notifications must be scoped to your verified account. Founder and developer events require separate server-side authorization.")
+        Text("Activity & notifications", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+        Text("Account and developer updates will appear here when an authenticated notification service is connected.", color = Muted)
+        InfoCard("Inbox is not connected", "No notification feed is configured. There are no simulated unread counts, alerts or security events.")
+        Text("Notification categories", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        InfoCard("Account security", "Sign-in alerts, password changes and verification activity • Awaiting secure event service")
+        InfoCard("Developer activity", "Application review decisions and integration notices • Awaiting account-scoped service")
+        InfoCard("Connected services", "Consent and connection changes • No live connections reported")
+        Text("Sensitive events will only be shown after server-side authentication and authorization. Ignite Pay financial notifications require separate consent and privileges.", color = Muted, fontSize = 12.sp)
+        Action("Return to Dashboard", onBack, primary = false)
     }
 }
 
