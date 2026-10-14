@@ -1,8 +1,8 @@
 "use strict";
 // One-time, create-only staging bootstrap. Never accepts production project credentials.
 // Intentionally refuses existing resources rather than altering an unknown schema.
-const { Client, TablesDB, IndexType } = require("node-appwrite");
-const STAGING = "6ace033b0026754b7531";
+const { Client, TablesDB, TablesDBIndexType } = require("node-appwrite");
+const STAGING = "6ace02c3002acdb7604d";
 const PRODUCTION = "6accc223002dbb161c74";
 const env = process.env;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -30,22 +30,23 @@ async function main() {
   const client = new Client().setEndpoint(env.APPWRITE_ENDPOINT)
     .setProject(STAGING).setKey(env.APPWRITE_PROVISIONING_KEY);
   const db = new TablesDB(client);
-  const databaseId = "productions";
-  // Reuse only the explicitly designated staging database; do not alter its settings.
-  stage = "inspect staging database";
-  let existingDatabase = null;
-  try { existingDatabase = await db.get({ databaseId }); }
-  catch (error) {
-    if (error?.code !== 404) throw error;
+  const databaseId = "6ace033b0026754b7531";
+  // Verify the existing database only. Never create it automatically.
+  stage = "verify existing staging database";
+  const existingDatabase = await db.get({ databaseId });
+  if (existingDatabase.$id !== databaseId) {
+    throw new Error("Unexpected database identity");
   }
-  if (existingDatabase) {
-    if (existingDatabase.$id !== databaseId) throw new Error("Unexpected database identity");
-    process.stdout.write("Using existing staging database: productions.\\n");
-  } else {
-    stage = "create staging database";
-    await db.create({ databaseId, name: "Spark ID Staging", enabled: true });
-    process.stdout.write("Created staging database: productions.\\n");
+
+  // Stop if the database already contains any tables.
+  stage = "inspect existing staging tables";
+  const existingTables = await db.listTables({ databaseId });
+  if (existingTables.tables?.length > 0) {
+    throw new Error("Database is not empty; refusing to provision");
   }
+
+  process.stdout.write("Existing database verified; no tables found.\n");
+
   const tables = [
     { tableId: "developer_approvals", name: "Developer Approvals", columns: [
       ["subject", "string", 128], ["status", "enum", ["pending", "approved", "revoked"]],
@@ -72,7 +73,7 @@ async function main() {
     }
     stage = "create index " + tableId + "." + table.index[0];
     await db.createIndex({ databaseId, tableId, key: table.index[0],
-      type: table.index[1] === "unique" ? IndexType.Unique : IndexType.Key,
+      type: table.index[1] === "unique" ? TablesDBIndexType.Unique : TablesDBIndexType.Key,
       columns: table.index[2], orders: ["ASC"] });
     await waitFor(() => db.getIndex({ databaseId, tableId, key: table.index[0] }), tableId + " index");
     process.stdout.write("Created private table and index: " + tableId + "\n");

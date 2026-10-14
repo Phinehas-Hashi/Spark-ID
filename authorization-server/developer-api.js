@@ -12,6 +12,9 @@ function createDeveloperApi({ workspace, maxBytes = 16384 } = {}) {
       res.end(JSON.stringify(body));
     };
     try {
+      // The local API is for first-party non-browser callers only; no CORS credential exposure.
+      if (req.headers && req.headers.origin) return reply(403, { error: "Browser origin not allowed" });
+      if (typeof req.url !== "string") return reply(404, { error: "Not found" });
       const url = new URL(req.url, "http://internal.invalid");
       if (url.search || url.hash) return reply(400, { error: "Query parameters are not supported" });
       const match = /^\/v1\/developer\/apps\/([A-Za-z0-9_-]{8,128})\/redirects$/.exec(url.pathname);
@@ -43,8 +46,8 @@ function createDeveloperApi({ workspace, maxBytes = 16384 } = {}) {
       return reply(200, { application: await workspace.replaceRedirects(credential, match[1], body.redirects) });
     } catch (error) {
       // Do not expose database, authorization, or audit internals in public responses.
-      if (/approval required|Verified developer required|Unauthenticated developer/.test(error.message)) return reply(403, { error: "Developer access denied" });
-      if (/Invalid |Duplicate |HTTPS |redirect|registration/.test(error.message)) return reply(400, { error: "Invalid application request" });
+      if (/approval required|Verified developer required|Unauthenticated developer/.test(error?.message || "")) return reply(403, { error: "Developer access denied" });
+      if (/Invalid |Duplicate |HTTPS |redirect|registration/.test(error?.message || "")) return reply(400, { error: "Invalid application request" });
       return reply(503, { error: "Developer service unavailable" });
     }
   };

@@ -61,3 +61,11 @@ test("does not leak internal errors", async () => {
   assert.equal(res.status, 503);
   assert.equal(JSON.stringify(res.body).includes("database"), false);
 });
+test("rejects browser-origin credentials before calling workspace", async () => {
+  const { send, calls } = setup();
+  const res = await send("GET", "/v1/developer/apps", undefined, {
+    authorization: "Bearer " + TOKEN, origin: "https://untrusted.example"
+  });
+  assert.equal(res.status, 403);
+  assert.equal(calls.length, 0);
+});
