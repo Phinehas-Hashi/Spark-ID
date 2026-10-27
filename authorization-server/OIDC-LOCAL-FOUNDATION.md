@@ -60,9 +60,10 @@ headers, as the OIDC library requires for TLS-offloaded deployments.
 `SPARK_ID_OIDC_ENVIRONMENT=staging` and
 `SPARK_ID_OIDC_ENABLE_STAGING=true` are both set. It also requires the database
 host and database name to match separate staging allowlist settings, and
-requires `sslmode=require`. For Render, use the internal URL from a service in
-the same region; Render's internal PostgreSQL TLS uses self-signed certificates,
-so hostname verification is not supported. The explicit staging host allowlist
+requires encrypted PostgreSQL transport. For Render, the generated internal URL
+may omit `sslmode`; startup adds `sslmode=require`. Render's internal PostgreSQL
+TLS uses self-signed certificates, so hostname verification is not supported.
+Use the internal URL from a service in the same region. The explicit staging host allowlist
 prevents the app from accepting a different database host. It checks that the
 migration's tables exist but never applies migrations. Copy `.env.example` to an
 ignored `.env` for local configuration; do not commit that file. Hosting
@@ -72,8 +73,9 @@ health route is `/healthz`.
 For a Render staging service, use `authorization-server` as the service root,
 `npm ci` as the build command, and `npm run start:staging` as the start command.
 Create a dedicated staging PostgreSQL database in the same region, set its exact
-host and database name in the allowlist variables, and use its internal URL
-with `sslmode=require`. Add the migration manually to that staging database after review. Keep the
+host and database name in the allowlist variables, and use its internal URL;
+startup requires TLS even if Render's URL omits `sslmode`. Add the migration
+manually to that staging database after review. Keep the
 service disabled until the issuer domain, static Studio callback, Appwrite
 staging project, signing key and cookie keys have all been independently
 checked. A custom domain and HTTPS certificate can then be attached in Render;

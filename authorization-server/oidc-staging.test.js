@@ -38,8 +38,8 @@ test("staging startup requires explicit enablement and exact isolated database a
     DATABASE_URL: "postgresql://user:password@staging-db.example.test/production?sslmode=require",
   })), /allowed staging database/);
   assert.throws(() => loadStagingConfig(validEnvironment({
-    DATABASE_URL: "postgresql://user:password@staging-db.example.test/sparkid_staging",
-  })), /sslmode=require/);
+    DATABASE_URL: "postgresql://user:password@staging-db.example.test/sparkid_staging?sslmode=disable",
+  })), /sslmode.*must be require/);
 });
 
 test("staging configuration accepts an explicitly matched TLS database and emits no defaults", async () => {
@@ -49,4 +49,13 @@ test("staging configuration accepts an explicitly matched TLS database and emits
   assert.equal(config.config.issuer, "https://auth.example.test");
   assert.equal(config.config.trustedProxy, true);
   assert.equal(config.port, 10000);
+});
+
+test("staging configuration requires TLS for Render's generated internal database URL", async () => {
+  const { loadStagingConfig } = await import("./oidc-staging.mjs");
+  const config = loadStagingConfig(validEnvironment({
+    DATABASE_URL: "postgresql://test_user:test_password@staging-db.example.test/sparkid_staging",
+  }));
+  const url = new URL(config.database.connectionString);
+  assert.equal(url.searchParams.get("sslmode"), "require");
 });

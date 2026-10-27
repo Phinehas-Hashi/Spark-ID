@@ -16,10 +16,16 @@ function parseDatabaseUrl(env) {
   const raw = required(env, 'DATABASE_URL');
   let url;
   try { url = new URL(raw); } catch { throw new Error('DATABASE_URL must be a valid PostgreSQL URL'); }
-  if (!['postgres:', 'postgresql:'].includes(url.protocol) || !url.username || !url.password ||
-      url.searchParams.get('sslmode') !== 'require') {
-    throw new Error('DATABASE_URL must require PostgreSQL TLS with sslmode=require');
+  if (!['postgres:', 'postgresql:'].includes(url.protocol) || !url.username || !url.password) {
+    throw new Error('DATABASE_URL must be a credentialed PostgreSQL URL');
   }
+  const sslmode = url.searchParams.get('sslmode');
+  if (sslmode !== null && sslmode !== 'require') {
+    throw new Error('DATABASE_URL sslmode, when specified, must be require');
+  }
+  // Render's internal URL omits sslmode. Require encryption while accepting
+  // that generated URL; its internal DB certificate is self-signed.
+  url.searchParams.set('sslmode', 'require');
   const databaseName = decodeURIComponent(url.pathname.replace(/^\//, ''));
   const expectedHost = required(env, 'SPARK_ID_OIDC_STAGING_DB_HOST').toLowerCase();
   const expectedDatabase = required(env, 'SPARK_ID_OIDC_STAGING_DB_NAME');
@@ -27,7 +33,7 @@ function parseDatabaseUrl(env) {
       ['localhost', '127.0.0.1', '::1'].includes(url.hostname.toLowerCase())) {
     throw new Error('DATABASE_URL does not match the explicitly allowed staging database');
   }
-  return { raw, databaseName };
+  return { connectionString: url.toString(), databaseName };
 }
 
 export function loadStagingConfig(env = process.env) {
@@ -72,7 +78,7 @@ export async function startStagingServer(env = process.env, dependencies = {}) {
   const settings = loadStagingConfig(env);
   const PoolClass = dependencies.Pool ?? Pool;
   const pool = new PoolClass({
-    connectionString: settings.database.raw,
+    connectionString: settings.database.connectionString,
     max: 10,
     connectionTimeoutMillis: 5000,
     idleTimeoutMillis: 10000,
