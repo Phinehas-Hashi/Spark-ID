@@ -1,0 +1,46 @@
+projects:
+  - name: My project
+    environments:
+      - name: Staging
+        services:
+          - type: web
+            name: spark-id-oidc-staging-phine
+            runtime: node
+            plan: free
+            region: frankfurt
+            branch: spark-id-oidc-pilot
+            rootDir: authorization-server
+            buildCommand: npm ci && SPARK_ID_OIDC_ALLOW_STAGING_MIGRATION=true npm run migrate:staging
+            startCommand: npm run start:staging
+            autoDeployTrigger: 'off'
+            envVars:
+              - key: DATABASE_URL
+                fromDatabase:
+                  name: spark-id-staging-db
+                  property: connectionString
+              - key: SPARK_ID_OIDC_ENVIRONMENT
+                value: staging
+              - key: SPARK_ID_OIDC_ENABLE_STAGING
+                value: "true"
+              - key: SPARK_ID_OIDC_ISSUER
+                value: https://spark-id-oidc-staging-phine.onrender.com
+              - key: SPARK_ID_OIDC_CLIENT_ID
+                value: spark_studio_staging
+              - key: SPARK_ID_OIDC_CLIENT_SECRET
+                generateValue: true
+              - key: SPARK_ID_OIDC_REDIRECT_URIS
+                value: '["https://omwraqylzsphvufvwcbr.supabase.co/auth/v1/callback"]'
+              - key: SPARK_ID_OIDC_JWKS
+                sync: false
+              - key: SPARK_ID_OIDC_COOKIE_KEYS
+                sync: false
+              - key: SPARK_ID_OIDC_STAGING_DB_HOST
+                value: dpg-dbga6bugekts738bfbeg-a
+              - key: SPARK_ID_OIDC_STAGING_DB_NAME
+                value: sparkid_staging
+              - key: APPWRITE_ENDPOINT
+                value: https://fra.cloud.appwrite.io/v1
+              - key: APPWRITE_PROJECT_ID
+                value: 6accc223002dbb161c74
+              - key: SPARK_ID_OIDC_TRUSTED_PROXY
+                value: "true"
