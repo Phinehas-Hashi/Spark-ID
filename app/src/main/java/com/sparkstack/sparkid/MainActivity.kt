@@ -37,18 +37,88 @@ private val Muted = Color(0xFF9AA6BD)
 private val Panel = Color(0xFF111B30)
 private val Background = Color(0xFF050816)
 
+private data class SparkStudioLinkRequest(
+    val requestToken: String,
+    val state: String,
+)
+
+private data class SparkStudioOidcRequest(val ticket: String)
+
 private enum class Screen { Welcome, Login, Register, Mfa, Dashboard, Identity, Security, Recovery, Apps, Developer, Notifications, FounderConsole }
 
 class MainActivity : ComponentActivity() {
+    private val pendingLinkRequest = mutableStateOf<SparkStudioLinkRequest?>(null)
+    private val pendingOidcRequest = mutableStateOf<SparkStudioOidcRequest?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { SparkIDTheme { SparkApp() } }
+        pendingLinkRequest.value = parseLinkRequest(intent)
+        pendingOidcRequest.value = parseOidcRequest(intent)
+        setContent {
+            SparkIDTheme {
+                SparkApp(
+                    linkRequest = pendingLinkRequest.value,
+                    oidcRequest = pendingOidcRequest.value,
+                    onLinkRequestHandled = {
+                        pendingLinkRequest.value = null
+                        setIntent(Intent(this, MainActivity::class.java))
+                    },
+                    onOidcRequestHandled = {
+                        pendingOidcRequest.value = null
+                        setIntent(Intent(this, MainActivity::class.java))
+                    },
+                )
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingLinkRequest.value = parseLinkRequest(intent)
+        pendingOidcRequest.value = parseOidcRequest(intent)
+    }
+
+    private fun parseLinkRequest(intent: Intent?): SparkStudioLinkRequest? {
+        val uri = intent?.data ?: return null
+        if (
+            uri.scheme != "sparkid" ||
+            uri.host != "link-account" ||
+            uri.userInfo != null ||
+            uri.fragment != null ||
+            uri.path.orEmpty().isNotEmpty()
+        ) return null
+        val token = uri.getQueryParameter("request_token") ?: return null
+        val state = uri.getQueryParameter("state") ?: return null
+        if (
+            token.matches(Regex("[A-Za-z0-9_-]{43}")) &&
+            state.matches(Regex("[A-Za-z0-9_-]{43}"))
+        ) {
+            return SparkStudioLinkRequest(token, state)
+        }
+        return null
+    }
+
+    private fun parseOidcRequest(intent: Intent?): SparkStudioOidcRequest? {
+        val uri = intent?.data ?: return null
+        if (
+            uri.scheme != "sparkid" || uri.host != "oidc-login" || uri.userInfo != null ||
+            uri.fragment != null || uri.path.orEmpty().isNotEmpty()
+        ) return null
+        val ticket = uri.getQueryParameter("request_token") ?: return null
+        if (ticket.matches(Regex("[A-Za-z0-9_-]{43}"))) return SparkStudioOidcRequest(ticket)
+        return null
     }
 }
 
 @Composable
-private fun SparkApp() {
+private fun SparkApp(
+    linkRequest: SparkStudioLinkRequest?,
+    oidcRequest: SparkStudioOidcRequest?,
+    onLinkRequestHandled: () -> Unit,
+    onOidcRequestHandled: () -> Unit,
+) {
     val context = LocalContext.current
     val auth = remember { SparkAuth(context.applicationContext) }
     val developerApi = remember { DeveloperApi() }
@@ -64,8 +134,32 @@ private fun SparkApp() {
     var developerError by remember { mutableStateOf<String?>(null) }
     var developerApps by remember { mutableStateOf<List<DeveloperApplication>?>(null) }
     var developerMessage by remember { mutableStateOf<String?>(null) }
+    var showLinkPrompt by remember { mutableStateOf(linkRequest != null && user != null) }
+    var oidcRequestDetails by remember { mutableStateOf<Pair<String, List<String>>?>(null) }
+    var oidcRequestLoading by remember { mutableStateOf(false) }
+    var showOidcPrompt by remember { mutableStateOf(oidcRequest != null) }
+    var oidcBusy by remember { mutableStateOf(false) }
+    var oidcError by remember { mutableStateOf<String?>(null) }
+    var oidcNotice by remember { mutableStateOf<String?>(null) }
     val developerWorker = remember { java.util.concurrent.Executors.newSingleThreadExecutor() }
     val developerMain = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
+    LaunchedEffect(linkRequest?.requestToken, user?.id) {
+        if (linkRequest != null && user != null) showLinkPrompt = true
+    }
+    LaunchedEffect(oidcRequest?.ticket) {
+        oidcRequestDetails = null
+        oidcError = null
+        val ticket = oidcRequest?.ticket ?: return@LaunchedEffect
+        oidcRequestLoading = true
+        auth.loadSparkStudioOidcRequest(ticket) { result ->
+            oidcRequestLoading = false
+            result.onSuccess { oidcRequestDetails = it }
+                .onFailure { oidcError = it.message ?: "Could not verify the Spark Studio sign-in request." }
+        }
+    }
+    LaunchedEffect(oidcRequest?.ticket, user?.id) {
+        if (oidcRequest != null) showOidcPrompt = true
+    }
     LaunchedEffect(Unit) {
         auth.restore { result ->
             result.onSuccess { restored -> if (restored != null) { user = restored; screen = Screen.Dashboard } }
@@ -249,6 +343,167 @@ private fun SparkApp() {
             }, onBack = { screen = Screen.Identity })
                 else Welcome(onLogin = { screen = Screen.Login }, onRegister = { screen = Screen.Register })
         } }
+        if (linkRequest != null && showLinkPrompt) {
+            AlertDialog(
+                onDismissRequest = {
+                    if (!busy) {
+                        showLinkPrompt = false
+                        if (user != null) onLinkRequestHandled()
+                    }
+                },
+                title = { Text("Link Spark ID to Spark Studio") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            if (user == null) {
+                                "Sign in to your Spark ID account to continue. Your account will only be linked after you confirm."
+                            } else {
+                                "This will connect ${user!!.email} to your signed-in Spark Studio account. Your projects and subscription remain in Spark Studio. Continue only if both accounts are yours."
+                            },
+                        )
+                        if (error != null) {
+                            Text(error!!, color = Color(0xFFFF7777), fontSize = 13.sp)
+                        }
+                        if (busy) CircularProgressIndicator(color = Gold)
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = !busy,
+                        onClick = {
+                            if (user == null) {
+                                error = null
+                                screen = Screen.Login
+                                showLinkPrompt = false
+                            } else {
+                                busy = true
+                                error = null
+                                auth.completeSparkStudioLink(
+                                    linkRequest.requestToken,
+                                    linkRequest.state,
+                                ) { result ->
+                                    busy = false
+                                    result.onSuccess { callbackUrl ->
+                                        try {
+                                            val callbackIntent = Intent(
+                                                Intent.ACTION_VIEW,
+                                                Uri.parse(callbackUrl),
+                                            ).setPackage("com.sparkstack.spark_studio")
+                                            context.startActivity(callbackIntent)
+                                            onLinkRequestHandled()
+                                        } catch (_: Exception) {
+                                            error = "Spark Studio could not be reopened. Return to Spark Studio to check the link status."
+                                            onLinkRequestHandled()
+                                        }
+                                    }.onFailure { failure ->
+                                        error = failure.message
+                                            ?: "The accounts could not be linked."
+                                    }
+                                }
+                            }
+                        },
+                    ) {
+                        Text(if (user == null) "Sign in" else "Confirm link")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        enabled = !busy,
+                        onClick = {
+                            showLinkPrompt = false
+                            onLinkRequestHandled()
+                        },
+                    ) {
+                        Text(if (user == null) "Cancel" else "Not now")
+                    }
+                },
+            )
+        }
+        if (oidcRequest != null && showOidcPrompt) {
+            AlertDialog(
+                onDismissRequest = { if (!oidcBusy) showOidcPrompt = false },
+                title = { Text("Spark Studio sign-in") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        when {
+                            oidcRequestLoading -> Text("Checking the sign-in request…", color = Muted)
+                            oidcRequestDetails != null -> {
+                                Text("${oidcRequestDetails!!.first} is requesting access.")
+                                if (user == null) {
+                                    Text("Sign in to Spark ID to review and approve this request.", color = Muted)
+                                } else {
+                                    Text("You are signed in as ${user!!.email}.", color = Muted)
+                                }
+                                Text("Requested information:", fontWeight = FontWeight.SemiBold)
+                                oidcRequestDetails!!.second.forEach { scope ->
+                                    Text(
+                                        when (scope) {
+                                            "openid" -> "• A unique Spark ID account identifier"
+                                            "profile" -> "• Your display name"
+                                            "email" -> "• Your verified email address"
+                                            else -> "• $scope"
+                                        },
+                                        color = Muted,
+                                        fontSize = 14.sp,
+                                    )
+                                }
+                            }
+                            else -> Text("This sign-in request could not be verified.", color = Muted)
+                        }
+                        if (oidcError != null) Text(oidcError!!, color = Color(0xFFFF7777), fontSize = 13.sp)
+                        if (oidcBusy) CircularProgressIndicator(color = Gold)
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = !oidcBusy && !checkingSession && oidcRequestDetails != null,
+                        onClick = {
+                            if (user == null) {
+                                oidcError = null
+                                showOidcPrompt = false
+                                screen = Screen.Login
+                            } else {
+                                oidcBusy = true
+                                oidcError = null
+                                auth.approveSparkStudioOidcRequest(oidcRequest.ticket) { result ->
+                                    oidcBusy = false
+                                    result.onSuccess {
+                                        showOidcPrompt = false
+                                        oidcNotice = "Sign-in approved. Return to your browser to continue to Spark Studio."
+                                        onOidcRequestHandled()
+                                    }.onFailure { failure ->
+                                        oidcError = failure.message ?: "Could not approve this sign-in request."
+                                    }
+                                }
+                            }
+                        },
+                    ) {
+                        Text(if (user == null) "Sign in" else "Approve sign-in")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        enabled = !oidcBusy,
+                        onClick = {
+                            oidcBusy = true
+                            auth.denySparkStudioOidcRequest(oidcRequest.ticket) {
+                                oidcBusy = false
+                                showOidcPrompt = false
+                                onOidcRequestHandled()
+                            }
+                        },
+                    ) { Text("Decline") }
+                },
+            )
+        }
+        if (oidcNotice != null) {
+            AlertDialog(
+                onDismissRequest = { oidcNotice = null },
+                title = { Text("Sign-in approved") },
+                text = { Text(oidcNotice!!) },
+                confirmButton = { TextButton(onClick = { oidcNotice = null }) { Text("Done") } },
+            )
+        }
     }
     }
 }

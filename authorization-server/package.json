@@ -8,9 +8,15 @@
   },
   "scripts": {
     "test": "node --test *.test.js",
-    "provision:staging": "node provision-staging.js"
+    "provision:staging": "node provision-staging.js",
+    "start:staging": "node oidc-staging.mjs"
   },
   "dependencies": {
-    "node-appwrite": "^29.2.0"
+    "node-appwrite": "^29.2.0",
+    "oidc-provider": "9.13.1",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8"
   }
 }

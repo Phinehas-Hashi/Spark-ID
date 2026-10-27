@@ -1,6 +1,7 @@
 package com.sparkstack.sparkid
 
 import android.content.Context
+import android.net.Uri
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -205,6 +206,153 @@ class SparkAuth(context: Context) {
         val jwt = request("POST", "/jwts").getString("jwt")
         check(jwt.isNotBlank()) { "Appwrite did not issue an authentication token." }
         jwt
+    }
+
+    fun completeSparkStudioLink(
+        requestToken: String,
+        expectedState: String,
+        done: (Result<String>) -> Unit,
+    ) = execute(done) {
+        require(requestToken.matches(Regex("[A-Za-z0-9_-]{43}"))) {
+            "The Spark Studio link request is invalid or expired."
+        }
+        require(expectedState.matches(Regex("[A-Za-z0-9_-]{43}"))) {
+            "The Spark Studio link request is invalid or expired."
+        }
+        check(sessionCookie != null) { "Sign in to Spark ID before linking." }
+        parseUser(request("GET", "")) // Requires a valid, fully authenticated Appwrite session.
+        val jwt = request("POST", "/jwts").getString("jwt")
+        check(jwt.isNotBlank()) { "Appwrite did not issue an authentication token." }
+
+        val publishableKey = BuildConfig.SPARK_STUDIO_PUBLISHABLE_KEY
+        check(publishableKey.isNotBlank()) {
+            "Spark Studio account linking is not configured in this Spark ID build."
+        }
+        val connection = URL(
+            "https://omwraqylzsphvufvwcbr.supabase.co/functions/v1/complete-spark-id-link"
+        ).openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 10000
+            connection.readTimeout = 10000
+            connection.setRequestProperty("apikey", publishableKey)
+            connection.setRequestProperty("X-Spark-ID-JWT", jwt)
+            connection.setRequestProperty("Accept", "application/json")
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.doOutput = true
+            connection.outputStream.use {
+                it.write(
+                    JSONObject()
+                        .put("requestToken", requestToken)
+                        .put("confirm", true)
+                        .toString()
+                        .toByteArray(Charsets.UTF_8)
+                )
+            }
+            val status = connection.responseCode
+            val raw = (if (status in 200..299) connection.inputStream else connection.errorStream)
+                ?.bufferedReader()?.use { it.readText() }.orEmpty()
+            val response = runCatching { JSONObject(raw) }.getOrElse { JSONObject() }
+            if (status !in 200..299) {
+                throw IllegalStateException(
+                    response.optString("error")
+                        .ifBlank { "Spark Studio account linking could not be completed." }
+                )
+            }
+            check(response.optBoolean("linked")) {
+                "Spark Studio did not confirm the account link."
+            }
+            val callback = Uri.parse(response.optString("callbackUrl"))
+            check(
+                callback.scheme == "sparkstudio" &&
+                    callback.host == "identity-link-callback" &&
+                    callback.userInfo == null &&
+                    callback.getQueryParameter("state") == expectedState
+            ) {
+                "Spark Studio returned an invalid account-link confirmation."
+            }
+            callback.toString()
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun oidcServerBase(): String {
+        val configured = BuildConfig.SPARK_ID_OIDC_SERVER_URL.trim().trimEnd('/')
+        val parsed = runCatching { URL(configured) }.getOrElse {
+            throw IllegalStateException("Spark ID sign-in server is not configured for this build.")
+        }
+        check(
+            parsed.protocol == "https" && parsed.host.isNotBlank() &&
+                parsed.userInfo == null && parsed.query == null && parsed.ref == null &&
+                (parsed.path.isNullOrEmpty() || parsed.path == "/")
+        ) { "Spark ID sign-in server must use its configured HTTPS address." }
+        return parsed.toString().trimEnd('/')
+    }
+
+    private fun oidcHandoffRequest(path: String, ticket: String, appwriteJwt: String? = null): JSONObject {
+        require(ticket.matches(Regex("[A-Za-z0-9_-]{43}"))) {
+            "The Spark Studio sign-in request is invalid or expired."
+        }
+        val connection = URL(oidcServerBase() + path).openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 10000
+            connection.readTimeout = 10000
+            connection.setRequestProperty("Accept", "application/json")
+            connection.setRequestProperty("Content-Type", "application/json")
+            appwriteJwt?.let { connection.setRequestProperty("X-Spark-ID-JWT", it) }
+            connection.doOutput = true
+            connection.outputStream.use {
+                it.write(JSONObject().put("ticket", ticket).toString().toByteArray(Charsets.UTF_8))
+            }
+            val status = connection.responseCode
+            val raw = (if (status in 200..299) connection.inputStream else connection.errorStream)
+                ?.bufferedReader()?.use { it.readText() }.orEmpty()
+            val response = runCatching { JSONObject(raw) }.getOrElse { JSONObject() }
+            if (status !in 200..299) {
+                throw IllegalStateException(
+                    when (response.optString("error")) {
+                        "account_not_eligible" -> "Verify your Spark ID email before using it to sign in to Spark Studio."
+                        "request_expired" -> "This Spark Studio sign-in request expired. Return to the browser and try again."
+                        else -> "Spark ID could not complete this sign-in request. Please retry."
+                    }
+                )
+            }
+            return response
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    fun loadSparkStudioOidcRequest(ticket: String, done: (Result<Pair<String, List<String>>>) -> Unit) = execute(done) {
+        val response = oidcHandoffRequest("/internal/oidc/handoff/details", ticket)
+        val scopesJson = response.optJSONArray("scopes")
+            ?: throw IllegalStateException("Spark ID returned an invalid sign-in request.")
+        val scopes = (0 until scopesJson.length()).map { scopesJson.getString(it) }
+        val clientName = response.optString("clientName")
+        check(clientName == "Spark Studio" && scopes.isNotEmpty() && scopes.all { it in setOf("openid", "profile", "email") }) {
+            "Spark ID returned an unsupported sign-in request."
+        }
+        clientName to scopes
+    }
+
+    fun approveSparkStudioOidcRequest(ticket: String, done: (Result<Unit>) -> Unit) = execute(done) {
+        check(sessionCookie != null) { "Sign in to Spark ID before approving this request." }
+        parseUser(request("GET", "")) // Appwrite enforces any required MFA here.
+        val jwt = request("POST", "/jwts").getString("jwt")
+        check(jwt.isNotBlank()) { "Appwrite did not issue an authentication token." }
+        check(oidcHandoffRequest("/internal/oidc/handoff/approve", ticket, jwt).optBoolean("approved")) {
+            "Spark ID did not confirm this sign-in request."
+        }
+        Unit
+    }
+
+    fun denySparkStudioOidcRequest(ticket: String, done: (Result<Unit>) -> Unit) = execute(done) {
+        check(oidcHandoffRequest("/internal/oidc/handoff/deny", ticket).optBoolean("denied")) {
+            "This Spark Studio sign-in request has expired."
+        }
+        Unit
     }
 
     fun logout(done: (Result<Unit>) -> Unit) = execute(done) {

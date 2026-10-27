@@ -3,9 +3,9 @@
 // Never forward this credential to third-party OAuth clients.
 const DEFAULT_ENDPOINT = process.env.APPWRITE_ENDPOINT || "https://fra.cloud.appwrite.io/v1";
 const DEFAULT_PROJECT = process.env.APPWRITE_PROJECT_ID || "6accc223002dbb161c74";
-function createAppwriteAuthenticator({ endpoint = DEFAULT_ENDPOINT, projectId = DEFAULT_PROJECT, fetchImpl = globalThis.fetch, timeoutMs = 5000 } = {}) {
+function createAppwriteAuthenticator({ endpoint = DEFAULT_ENDPOINT, projectId = DEFAULT_PROJECT, fetchImpl = globalThis.fetch, timeoutMs = 5000, includeProfile = false } = {}) {
   const url = new URL(endpoint);
-  if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash || url.pathname !== "/v1" || !projectId || typeof fetchImpl !== "function" || !Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30000)
+  if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash || url.pathname !== "/v1" || !projectId || typeof fetchImpl !== "function" || !Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30000 || typeof includeProfile !== "boolean")
     throw new Error("Invalid Appwrite authentication configuration");
   const accountUrl = url.origin + "/v1/account";
   return async function authenticate(jwt) {
@@ -23,7 +23,13 @@ function createAppwriteAuthenticator({ endpoint = DEFAULT_ENDPOINT, projectId = 
       const account = await response.json();
       if (!account || typeof account.$id !== "string" || !/^[A-Za-z0-9_-]{3,128}$/.test(account.$id) || account.status !== true)
         return null;
-      return { verified: true, subject: account.$id };
+      const principal = { verified: true, subject: account.$id };
+      if (includeProfile) {
+        principal.email = typeof account.email === "string" ? account.email : "";
+        principal.emailVerified = account.emailVerification === true;
+        principal.name = typeof account.name === "string" ? account.name : "";
+      }
+      return principal;
     } catch { return null; } // Fail closed; never log JWTs or leak Appwrite response.
   };
 }

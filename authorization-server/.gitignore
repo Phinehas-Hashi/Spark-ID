@@ -4,3 +4,8 @@
 !.env.example
 coverage/
 *.log
+# Preserve local safety snapshots without adding them to Git.
+/provision-staging.js.backup
+/provision-staging.js.before-*
+/provision-staging.js.pre-*
+/provision-staging.js.preflight-*

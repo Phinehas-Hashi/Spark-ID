@@ -3,6 +3,21 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val studioPublishableKey = providers
+    .gradleProperty("sparkStudioPublishableKey")
+    .orElse(providers.environmentVariable("SPARK_STUDIO_SUPABASE_PUBLISHABLE_KEY"))
+    .getOrElse("")
+    .replace("\\", "\\\\")
+    .replace("\"", "\\\"")
+
+val sparkIdOidcServerUrl = providers
+    .gradleProperty("sparkIdOidcServerUrl")
+    .orElse(providers.environmentVariable("SPARK_ID_OIDC_SERVER_URL"))
+    .getOrElse("")
+    .trim()
+    .replace("\\", "\\\\")
+    .replace("\"", "\\\"")
+
 android {
     namespace = "com.sparkstack.sparkid"
     compileSdk {
@@ -15,6 +30,16 @@ android {
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
+        buildConfigField(
+            "String",
+            "SPARK_STUDIO_PUBLISHABLE_KEY",
+            "\"$studioPublishableKey\"",
+        )
+        buildConfigField(
+            "String",
+            "SPARK_ID_OIDC_SERVER_URL",
+            "\"$sparkIdOidcServerUrl\"",
+        )
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -33,6 +58,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

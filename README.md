@@ -22,7 +22,9 @@ Windows build: `.\\gradlew.bat assembleDebug`.
 `docs/developers.html` publishes the planned third-party integration contract and is linked from the Android Developer Hub. **No public OAuth/OIDC provider, developer registration or token issuance is live yet.** The existing Appwrite Account API and first-party session cookie are not a third-party SSO protocol. See the guide for required authorization server, PKCE, redirect validation, scopes, consent, token verification and revocation milestones.
 
 ## Authorization server foundation (not live)
-The dependency-free, local-only validation module and tests are under `authorization-server/`. Run `cd authorization-server && npm test` using Node 20+. Read `authorization-server/ARCHITECTURE.md` before building any live endpoints. No developer credentials or public SSO endpoints are available yet.
+The local-only validation and authorization-code core plus tests are under `authorization-server/`. Run `cd authorization-server && npm test` using Node 20+. The code core requires trusted Appwrite authentication, an approved client, an exact redirect match, server-verified one-time consent, PKCE S256, and injected atomic code storage. It is not a live provider: it has no HTTP endpoints, production consent UI, durable code/consent storage, ID/access-token signing, discovery or JWKS. No developer credentials or public SSO endpoints are available yet. Read `authorization-server/ARCHITECTURE.md` before building any live endpoints.
+
+GitHub Pages currently serves only the static email verification and password recovery callback. It cannot run the dynamic OAuth/OIDC authorization and token endpoints Spark Studio needs. Spark Studio's Supabase login remains unchanged until those endpoints and the server-side identity bridge are deployed and verified.
 
 ### Local developer registry prototype
 `authorization-server/registry.js` provides local pending-review app records with random public client IDs and owner-filtered reads; it is **not an authenticated endpoint**. See `authorization-server/REGISTRY.md`. Run `npm.cmd test` in that directory to execute both validation and registry tests.
