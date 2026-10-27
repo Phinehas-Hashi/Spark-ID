@@ -24,14 +24,20 @@ function stagingDatabase(env) {
   }
   const sslmode = url.searchParams.get('sslmode');
   if (sslmode !== null && sslmode !== 'require') throw new Error('DATABASE_URL must use sslmode=require');
-  url.searchParams.set('sslmode', 'require');
+  // Render's private Postgres endpoint uses a self-signed certificate. Keep
+  // TLS encryption and disable CA validation only after checking the host.
+  url.searchParams.delete('sslmode');
   const host = required(env, 'SPARK_ID_OIDC_STAGING_DB_HOST').toLowerCase();
   const databaseName = required(env, 'SPARK_ID_OIDC_STAGING_DB_NAME');
   if (url.hostname.toLowerCase() !== host || decodeURIComponent(url.pathname.slice(1)) !== databaseName ||
       ['localhost', '127.0.0.1', '::1'].includes(url.hostname.toLowerCase())) {
     throw new Error('DATABASE_URL does not match the explicitly allowed staging database');
   }
-  return { connectionString: url.toString(), databaseName };
+  return {
+    connectionString: url.toString(),
+    databaseName,
+    ssl: { rejectUnauthorized: false },
+  };
 }
 
 export async function migrateStagingDatabase(env = process.env, dependencies = {}) {
@@ -39,6 +45,7 @@ export async function migrateStagingDatabase(env = process.env, dependencies = {
   const PoolClass = dependencies.Pool ?? Pool;
   const pool = new PoolClass({
     connectionString: database.connectionString,
+    ssl: database.ssl,
     max: 1,
     connectionTimeoutMillis: 5000,
     idleTimeoutMillis: 5000,

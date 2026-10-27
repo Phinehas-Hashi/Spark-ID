@@ -61,9 +61,9 @@ headers, as the OIDC library requires for TLS-offloaded deployments.
 `SPARK_ID_OIDC_ENABLE_STAGING=true` are both set. It also requires the database
 host and database name to match separate staging allowlist settings, and
 requires encrypted PostgreSQL transport. For Render, the generated internal URL
-may omit `sslmode`; startup adds `sslmode=require`. Render's internal PostgreSQL
-TLS uses self-signed certificates, so hostname verification is not supported.
-Use the internal URL from a service in the same region. The explicit staging host allowlist
+may omit `sslmode`; startup configures TLS directly and allows the self-signed
+certificate only for the exact, allowlisted private staging host. Use the internal
+URL from a service in the same region. The explicit staging host allowlist
 prevents the app from accepting a different database host. It checks that the
 migration's tables exist but never applies migrations. Copy `.env.example` to an
 ignored `.env` for local configuration; do not commit that file. Hosting

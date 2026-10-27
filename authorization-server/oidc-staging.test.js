@@ -57,5 +57,6 @@ test("staging configuration requires TLS for Render's generated internal databas
     DATABASE_URL: "postgresql://test_user:test_password@staging-db.example.test/sparkid_staging",
   }));
   const url = new URL(config.database.connectionString);
-  assert.equal(url.searchParams.get("sslmode"), "require");
+  assert.equal(url.searchParams.has("sslmode"), false);
+  assert.deepEqual(config.database.ssl, { rejectUnauthorized: false });
 });

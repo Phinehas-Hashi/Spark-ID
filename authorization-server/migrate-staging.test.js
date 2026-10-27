@@ -47,7 +47,11 @@ test("staging migration refuses production or mismatched database targets before
 test("staging migration requires TLS and does not need reapply authorization when complete", async () => {
   const { migrateStagingDatabase } = await import("./migrate-staging.mjs");
   const pool = fakePool(tableNames);
-  class Pool { constructor(options) { assert.equal(new URL(options.connectionString).searchParams.get("sslmode"), "require"); return pool; } }
+  class Pool { constructor(options) {
+    assert.equal(new URL(options.connectionString).searchParams.has("sslmode"), false);
+    assert.deepEqual(options.ssl, { rejectUnauthorized: false });
+    return pool;
+  } }
   const result = await migrateStagingDatabase(environment({ SPARK_ID_OIDC_ALLOW_STAGING_MIGRATION: "false" }), { Pool });
   assert.equal(result, "already-applied");
   assert.equal(pool.calls.at(-1).sql, "end");
