@@ -71,7 +71,11 @@ dashboards should receive the same values through their secret settings. The
 health route is `/healthz`.
 
 For a Render staging service, use `authorization-server` as the service root,
-`npm ci` as the build command, and `npm run start:staging` as the start command.
+`npm ci && SPARK_ID_OIDC_ALLOW_STAGING_MIGRATION=true npm run migrate:staging`
+as the initial build command, and `npm run start:staging` as the start command.
+The migration command checks the database allowlist, applies the additive SQL
+in one transaction only when the schema is empty, and is a no-op after all
+expected tables exist.
 Create a dedicated staging PostgreSQL database in the same region, set its exact
 host and database name in the allowlist variables, and use its internal URL;
 startup requires TLS even if Render's URL omits `sslmode`. Add the migration
